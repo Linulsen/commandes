@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ardoise-50: #f6f7f9;
+  --color-ardoise-100: #ebedf1;
+  --color-ardoise-200: #d5dae2;
+  --color-ardoise-400: #8b94a5;
+  --color-ardoise-600: #4d5668;
+  --color-ardoise-800: #262c39;
+  --color-ardoise-900: #171b24;
+  --color-braise-500: #c2410c;
+  --color-braise-600: #9a3412;
+  --color-sauge-500: #3f7d5c;
+  --color-sauge-100: #e3f0e9;
+}
+
+:root { color-scheme: light; }
+
+body {
+  background: var(--color-ardoise-50);
+  color: var(--color-ardoise-900);
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Le relevé se fait au pouce, en chambre froide : les champs numériques ne
+   doivent ni zoomer à la mise au point ni afficher de flèches parasites. */
+input[type="number"] { font-size: 16px; }
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }
+
+@media print {
+  .sans-impression { display: none !important; }
+  body { background: #fff; }
+}
