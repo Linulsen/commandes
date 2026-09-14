@@ -46,7 +46,7 @@ create table if not exists cmd_sessions (
   date_commande   date not null,
   libelle         text not null default '',
   statut          text not null default 'brouillon' check (statut in ('brouillon','validee')),
-  marge           numeric not null default 0.25,
+  marge           numeric not null default 0.5,
   note            text,
   created_at      timestamptz not null default now(),
   validee_le      timestamptz,
@@ -55,7 +55,7 @@ create table if not exists cmd_sessions (
 comment on table cmd_sessions is
   'Une campagne de commande : le relevé de stock de toutes les chambres du fournisseur à une date, et la commande qui en découle. Une colonne de semaine du classeur = une session.';
 comment on column cmd_sessions.marge is
-  'Marge de sécurité appliquée à la consommation prévue pour suggérer les quantités (0.25 = +25 %).';
+  'Marge de sécurité appliquée à la consommation prévue pour suggérer les quantités (0.5 = +50 %). Valeur retenue après rejeu des 60 relevés du classeur : à 25 % la proposition passait sous la consommation réellement constatée dans 6 % des cas, à 50 % dans 4 %, tout en laissant en chambre nettement moins de stock que les commandes passées à la main.';
 
 create table if not exists cmd_lignes (
   id              bigserial primary key,
@@ -109,6 +109,11 @@ select
   ) as conso
 from base b
 window w as (partition by b.produit_id order by b.date_commande, b.session_id);
+
+-- Sans cette option, la vue s'exécute avec les droits de son propriétaire et
+-- contourne le RLS des tables qu'elle lit : n'importe quel porteur de la clé
+-- anonyme pourrait relire tout l'historique des relevés.
+alter view public.cmd_historique set (security_invoker = true);
 
 alter table cmd_fournisseurs enable row level security;
 alter table cmd_zones        enable row level security;
