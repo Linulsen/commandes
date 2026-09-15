@@ -35,9 +35,13 @@ type Paginable<T> = {
 };
 
 /**
- * Lit une requête en entier. PostgREST plafonne une réponse à 1000 lignes, et
- * l'historique des relevés en compte près de 5000 : sans pagination, la moitié
- * des consommations disparaîtrait silencieusement de la prévision.
+ * Lit une requête en entier, page par page, PostgREST plafonnant une réponse à
+ * 1000 lignes.
+ *
+ * La requête DOIT porter un tri sur une colonne unique — `id` en pratique. Sans
+ * tri total, deux pages successives ne voient pas le même ordre : des lignes
+ * reviennent deux fois et d'autres jamais. Trier sur la seule date d'une
+ * commande avait fait lire 3 571 relevés dont 45 en double et 45 absents.
  *
  * La requête est reconstruite à chaque page parce qu'un constructeur PostgREST
  * ne se rejoue pas : une fois attendu, il est consommé.

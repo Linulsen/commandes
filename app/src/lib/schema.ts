@@ -1,4 +1,5 @@
 import type {
+  CommandeRpc,
   Fournisseur,
   Ligne,
   PointHistorique,
@@ -37,7 +38,12 @@ export type Database = {
     Views: {
       cmd_historique: { Row: PointHistorique; Relationships: [] };
     };
-    Functions: Record<never, never>;
+    Functions: {
+      cmd_commande: {
+        Args: { p_session_id: number };
+        Returns: CommandeRpc;
+      };
+    };
     Enums: Record<never, never>;
     CompositeTypes: Record<never, never>;
   };

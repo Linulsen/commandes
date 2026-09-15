@@ -1,4 +1,4 @@
-import type { PointHistorique } from "./types";
+import type { PointConso } from "./types";
 
 export type Fiabilite = "bonne" | "moyenne" | "faible" | "aucune";
 
@@ -11,7 +11,7 @@ export type Prevision = {
   joursHorizon: number;
   fiabilite: Fiabilite;
   /** Consommations relevées, de la plus ancienne à la plus récente. */
-  serie: { date: string; conso: number; jours: number }[];
+  serie: PointConso[];
   derniere: number | null;
   /** Coefficient de variation : la régularité du produit, pas son volume. */
   variation: number | null;
@@ -23,44 +23,6 @@ export type Prevision = {
 const moyenne = (xs: number[]) =>
   xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 
-const jours = (a: string, b: string) =>
-  Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
-
-/**
- * Consommations exploitables d'un produit, ramenées à un rythme journalier.
- *
- * Deux relevés ne sont pas toujours séparés du même nombre de jours : Cledor
- * livre deux fois par semaine à trois puis quatre jours d'intervalle, et une
- * semaine peut sauter. Comparer des consommations brutes reviendrait alors à
- * comparer des durées différentes.
- *
- * Une consommation négative n'est pas une aberration à jeter : elle dit qu'un
- * relevé de stock a été surévalué, et la période suivante porte l'excédent
- * symétrique. Les supprimer gonflerait la moyenne. On les garde donc telles
- * quelles — une moyenne sur fenêtre les compense d'elle-même, puisque la somme
- * des consommations d'une fenêtre ne dépend que des stocks de ses deux bornes
- * et des livraisons intermédiaires.
- */
-export function serieConso(points: PointHistorique[]) {
-  const tries = [...points].sort((a, b) =>
-    a.date_commande.localeCompare(b.date_commande),
-  );
-  const out: { date: string; conso: number; jours: number }[] = [];
-  for (let i = 0; i < tries.length; i++) {
-    const p = tries[i];
-    if (p.conso === null || !Number.isFinite(Number(p.conso))) continue;
-    // Le tout premier relevé porte une consommation saisie à la main, sans
-    // période connue : on ne peut pas en tirer un rythme journalier.
-    if (i === 0) continue;
-    out.push({
-      date: p.date_commande,
-      conso: Number(p.conso),
-      jours: jours(tries[i - 1].date_commande, p.date_commande),
-    });
-  }
-  return out;
-}
-
 /** Durée typique entre deux relevés, pour projeter la période à venir. */
 export function horizonHabituel(serie: { jours: number }[], defaut = 7) {
   if (!serie.length) return defaut;
@@ -68,11 +30,31 @@ export function horizonHabituel(serie: { jours: number }[], defaut = 7) {
   return recents[Math.floor(recents.length / 2)];
 }
 
+/**
+ * Prévision de consommation d'un produit à partir de son historique.
+ *
+ * La série arrive déjà construite par la fonction SQL `cmd_commande` : chaque
+ * point porte ce qui a été consommé et en combien de jours. Deux relevés ne
+ * sont pas toujours séparés du même nombre de jours — Cledor livre deux fois
+ * par semaine à trois puis quatre jours d'intervalle, et une semaine peut
+ * sauter — donc tout se raisonne en rythme journalier.
+ *
+ * Une consommation négative n'est pas une aberration à jeter : elle dit qu'un
+ * relevé de stock a été surévalué, et la période suivante porte l'excédent
+ * symétrique. Les supprimer gonflerait la moyenne. On les garde donc telles
+ * quelles — une moyenne sur fenêtre les compense d'elle-même, puisque la somme
+ * des consommations d'une fenêtre ne dépend que des stocks de ses deux bornes
+ * et des livraisons intermédiaires.
+ *
+ * `nbRelevesTotal` peut dépasser la longueur de la série : celle-ci est bornée
+ * aux derniers relevés, alors que l'écran annonce l'historique réellement
+ * disponible.
+ */
 export function prevoir(
-  points: PointHistorique[],
+  serie: PointConso[],
   joursHorizon?: number,
+  nbRelevesTotal?: number,
 ): Prevision {
-  const serie = serieConso(points);
   const parJour = serie.map((s) => s.conso / s.jours);
   const n = parJour.length;
   const horizon = joursHorizon ?? horizonHabituel(serie);
@@ -111,7 +93,7 @@ export function prevoir(
     serie,
     derniere: n ? serie[serie.length - 1].conso : null,
     variation,
-    nbPoints: n,
+    nbPoints: nbRelevesTotal ?? n,
     anomalies,
   };
 }

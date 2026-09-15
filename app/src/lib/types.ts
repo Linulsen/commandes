@@ -61,3 +61,19 @@ export type PointHistorique = {
   total: number | null;
   conso: number | null;
 };
+
+/** Un intervalle entre deux relevés : ce qui a été consommé, et en combien de jours. */
+export type PointConso = { date: string; conso: number; jours: number };
+
+/** Charge utile de la fonction SQL `cmd_commande`. */
+export type CommandeRpc = {
+  session: Session;
+  zones: Zone[];
+  lignes: {
+    produit: Produit;
+    ligne: Partial<Ligne>;
+    nbReleves: number;
+    stockPrecedent: number | null;
+    serie: PointConso[];
+  }[];
+};

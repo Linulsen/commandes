@@ -1,9 +1,9 @@
 import { sb, selectAll } from "./db";
 import { alerte, couverture, prevoir, suggerer, type Prevision } from "./forecast";
 import type {
+  CommandeRpc,
   Fournisseur,
   Ligne,
-  PointHistorique,
   Produit,
   Session,
   Zone,
@@ -74,89 +74,55 @@ export async function getSessions(limite = 40) {
  * Tout ce qu'il faut pour afficher une commande : les produits du fournisseur,
  * leur historique, la prévision et la quantité proposée.
  *
- * L'historique exclut la session en cours — sinon le relevé qu'on est en train
- * de saisir servirait à prédire sa propre consommation.
+ * Une seule requête. L'assemblage vivait auparavant ici, en huit allers-retours
+ * enchaînés dont quatre pour paginer l'historique ; il tient maintenant dans la
+ * fonction SQL `cmd_commande`, qui exclut d'elle-même la session en cours —
+ * sinon le relevé qu'on est en train de saisir servirait à prédire sa propre
+ * consommation.
  */
 export async function getCommande(sessionId: number) {
-  const session = await getSession(sessionId);
-  if (!session) return null;
+  const { data, error } = await sb().rpc("cmd_commande", {
+    p_session_id: sessionId,
+  });
+  if (error) throw new Error(error.message);
+  const paquet = data as CommandeRpc | null;
+  if (!paquet?.session) return null;
 
-  const zones = await getZones(session.fournisseur_id);
-  const zoneIds = zones.map((z) => z.id);
-  const produits = await selectAll<Produit>(() =>
-    sb().from("cmd_produits").select("*").in("zone_id", zoneIds),
-  );
-  const produitIds = produits.map((p) => p.id);
-
-  const lignes = await selectAll<Ligne>(() =>
-    sb().from("cmd_lignes").select("*").eq("session_id", sessionId),
-  );
-
-  const historique = await selectAll<PointHistorique>(() =>
-    sb()
-      .from("cmd_historique")
-      .select("produit_id,session_id,date_commande,stock,colis,total,conso")
-      .in("produit_id", produitIds)
-      .order("date_commande"),
-  );
-
-  const parProduit = new Map<number, PointHistorique[]>();
-  for (const h of historique) {
-    if (h.session_id === sessionId) continue;
-    if (h.date_commande > session.date_commande) continue;
-    const l = parProduit.get(h.produit_id) ?? [];
-    l.push(h);
-    parProduit.set(h.produit_id, l);
-  }
-
+  const { session, zones } = paquet;
   const zoneParId = new Map(zones.map((z) => [z.id, z]));
-  const ligneParProduit = new Map(lignes.map((l) => [l.produit_id, l]));
 
-  const enrichies: LigneEnrichie[] = produits
-    .filter((p) => p.actif)
-    .map((produit) => {
-      const points = (parProduit.get(produit.id) ?? []).sort((a, b) =>
-        a.date_commande.localeCompare(b.date_commande),
-      );
-      const prevision = prevoir(points);
-      const ligne =
-        ligneParProduit.get(produit.id) ??
-        ({
-          id: 0,
-          session_id: sessionId,
-          produit_id: produit.id,
-          stock: null,
-          colis: null,
-          suggestion: null,
-          conso_prevue: null,
-          conso_manuelle: null,
-          note: null,
-        } as Ligne);
-      const dernier = points.at(-1);
-      return {
-        ligne,
-        produit,
-        zone: zoneParId.get(produit.zone_id)!,
-        prevision,
-        suggestion: suggerer(
-          prevision.consoPrevue,
-          ligne.stock,
-          Number(produit.fact),
-          Number(session.marge),
-        ),
-        alerte: alerte(prevision, ligne.stock),
-        couverture: couverture(prevision, ligne.stock),
-        stockPrecedent: dernier?.stock === undefined ? null : Number(dernier.stock),
-      };
-    })
-    .sort(
-      (a, b) =>
-        a.zone.ordre - b.zone.ordre ||
-        a.produit.ordre - b.produit.ordre ||
-        a.produit.nom.localeCompare(b.produit.nom),
-    );
+  const lignes: LigneEnrichie[] = paquet.lignes.map((brut) => {
+    const produit = brut.produit;
+    const prevision = prevoir(brut.serie, undefined, brut.nbReleves);
+    const ligne: Ligne = {
+      id: brut.ligne.id ?? 0,
+      session_id: sessionId,
+      produit_id: produit.id,
+      stock: brut.ligne.stock ?? null,
+      colis: brut.ligne.colis ?? null,
+      suggestion: brut.ligne.suggestion ?? null,
+      conso_prevue: brut.ligne.conso_prevue ?? null,
+      conso_manuelle: brut.ligne.conso_manuelle ?? null,
+      note: brut.ligne.note ?? null,
+    };
+    return {
+      ligne,
+      produit,
+      zone: zoneParId.get(produit.zone_id)!,
+      prevision,
+      suggestion: suggerer(
+        prevision.consoPrevue,
+        ligne.stock,
+        Number(produit.fact),
+        Number(session.marge),
+      ),
+      alerte: alerte(prevision, ligne.stock),
+      couverture: couverture(prevision, ligne.stock),
+      stockPrecedent: brut.stockPrecedent,
+    };
+  });
 
-  return { session, zones, lignes: enrichies };
+  return { session, zones, lignes };
 }
 
 /**
@@ -196,7 +162,8 @@ export async function ouvrirSession(
     sb()
       .from("cmd_produits")
       .select("id,actif")
-      .in("zone_id", zones.map((z) => z.id)),
+      .in("zone_id", zones.map((z) => z.id))
+      .order("id"),
   );
   const { error } = await sb().from("cmd_lignes").upsert(
     produits
@@ -249,7 +216,8 @@ export async function getAccueil(): Promise<ResumeFournisseur[]> {
       sb()
         .from("cmd_lignes")
         .select("session_id,stock")
-        .in("session_id", brouillons.map((s) => s.id)),
+        .in("session_id", brouillons.map((s) => s.id))
+        .order("id"),
     );
     for (const l of lignes) {
       const c = compte.get(l.session_id) ?? { saisis: 0, total: 0 };
