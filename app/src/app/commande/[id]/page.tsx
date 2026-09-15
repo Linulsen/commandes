@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import Entete from "../../Entete";
 import { getCommande, getFournisseurs } from "@/lib/model";
 import { dateLongue } from "@/lib/format";
 import Saisie from "./Saisie";
@@ -21,21 +21,23 @@ export default async function Commande({
     (f) => f.id === commande.session.fournisseur_id,
   )!;
 
+  const sousTitre = [
+    dateLongue(commande.session.date_commande),
+    commande.session.libelle,
+    commande.session.statut === "validee" ? "validée" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <main className="mx-auto max-w-2xl px-4 pb-32 pt-6">
-      <header className="sans-impression">
-        <Link href="/" className="text-sm text-ardoise-600 underline">
-          ← Commandes
-        </Link>
-        <h1 className="mt-2 text-xl font-semibold tracking-tight">
-          {fournisseur.nom}
-        </h1>
-        <p className="text-sm text-ardoise-600">
-          {dateLongue(commande.session.date_commande)}
-          {commande.session.libelle ? ` · ${commande.session.libelle}` : ""}
-          {commande.session.statut === "validee" ? " · validée" : ""}
-        </p>
-      </header>
+    <main>
+      <div className="sans-impression">
+        <Entete
+          titre={fournisseur.nom}
+          sousTitre={sousTitre}
+          retour={{ href: "/", libelle: "Commandes" }}
+        />
+      </div>
 
       <Saisie
         session={commande.session}
@@ -49,6 +51,8 @@ export default async function Commande({
           fact: Number(l.produit.fact),
           stock: l.ligne.stock === null ? null : Number(l.ligne.stock),
           colis: l.ligne.colis === null ? null : Number(l.ligne.colis),
+          suggestionEnregistree:
+            l.ligne.suggestion === null ? null : Number(l.ligne.suggestion),
           consoPrevue: l.prevision.consoPrevue,
           fiabilite: l.prevision.fiabilite,
           nbPoints: l.prevision.nbPoints,

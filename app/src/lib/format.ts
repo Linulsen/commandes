@@ -9,6 +9,14 @@ export function dateCourte(iso: string) {
   return `${d.getUTCDate()} ${MOIS[d.getUTCMonth()]}`;
 }
 
+/** « lun. 14 sept. » : assez pour situer, assez court pour une carte. */
+export function dateMoyenne(iso: string) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  const jour = JOURS[d.getUTCDay()].slice(0, 3);
+  const mois = MOIS[d.getUTCMonth()];
+  return `${jour}. ${d.getUTCDate()} ${mois.length > 4 ? `${mois.slice(0, 4)}.` : mois}`;
+}
+
 export function dateLongue(iso: string) {
   const d = new Date(`${iso}T12:00:00Z`);
   return `${JOURS[d.getUTCDay()]} ${d.getUTCDate()} ${MOIS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;

@@ -1,38 +1,99 @@
 @import "tailwindcss";
 
+/* Palette Del Arte, relevée dans la feuille de style de delarte.fr :
+   `--primary-brand-*` pour le rouge, `--secondary-brand-*` pour le vert,
+   `--neutral-*` pour les gris. Les noms sont traduits, les valeurs non. */
 @theme {
-  --color-ardoise-50: #f6f7f9;
-  --color-ardoise-100: #ebedf1;
-  --color-ardoise-200: #d5dae2;
-  --color-ardoise-400: #8b94a5;
-  --color-ardoise-600: #4d5668;
-  --color-ardoise-800: #262c39;
-  --color-ardoise-900: #171b24;
-  --color-braise-500: #c2410c;
-  --color-braise-600: #9a3412;
-  --color-sauge-500: #3f7d5c;
-  --color-sauge-100: #e3f0e9;
+  --color-rouge-50: #fff0f1;
+  --color-rouge-100: #ffe1e4;
+  --color-rouge-200: #ffc8ce;
+  --color-rouge-400: #ff637a;
+  --color-rouge-500: #ff2c50;
+  --color-rouge-600: #e30736;
+  --color-rouge-700: #d50032;
+  --color-rouge-800: #ae0330;
+  --color-rouge-950: #530015;
+
+  --color-vert-50: #f1fcf5;
+  --color-vert-100: #dff9e8;
+  --color-vert-200: #c1f1d2;
+  --color-vert-500: #33b463;
+  --color-vert-600: #228848;
+  --color-vert-700: #207e42;
+  --color-vert-800: #1e5d36;
+  --color-vert-950: #092a17;
+
+  --color-neutre-0: #ffffff;
+  --color-neutre-50: #f6f6f6;
+  --color-neutre-100: #e7e7e7;
+  --color-neutre-200: #d1d1d1;
+  --color-neutre-300: #b0b0b0;
+  --color-neutre-400: #888888;
+  --color-neutre-500: #6d6d6d;
+  --color-neutre-700: #4f4f4f;
+  --color-neutre-900: #3d3d3d;
+  --color-neutre-950: #1d1d1d;
+
+  --color-ambre-50: #fff1e6;
+  --color-ambre-100: #ffeed5;
+  --color-ambre-700: #bf3b0f;
+
+  --font-titre: var(--police-titre), Georgia, serif;
+  --font-sans: var(--police-texte), system-ui, sans-serif;
 }
 
-:root { color-scheme: light; }
+:root {
+  color-scheme: light;
+  /* Hauteur des deux barres fixes, pour que le contenu ne passe pas dessous. */
+  --barre-basse: 5rem;
+}
 
 body {
-  background: var(--color-ardoise-50);
-  color: var(--color-ardoise-900);
+  background: var(--color-neutre-50);
+  color: var(--color-neutre-950);
   -webkit-text-size-adjust: 100%;
+  /* Le relevé se fait au pouce, en marchant : pas de rebond élastique qui
+     donne l'impression que la page décroche. */
+  overscroll-behavior-y: none;
+}
+
+/* Un appui sur un bouton ne doit pas surligner en bleu système. */
+button,
+a,
+select,
+input {
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Le relevé se fait au pouce, en chambre froide : les champs numériques ne
-   doivent ni zoomer à la mise au point ni afficher de flèches parasites. */
-input[type="number"] { font-size: 16px; }
+   doivent ni zoomer à la mise au point (d'où les 16 px) ni afficher de
+   flèches parasites qui volent de la surface tactile. */
+input[type="number"] {
+  font-size: 16px;
+  -moz-appearance: textfield;
+}
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
-input[type="number"] { -moz-appearance: textfield; }
+
+/* Les onglets de chambre défilent horizontalement : on masque la barre, le
+   débordement se voit déjà au demi-onglet qui dépasse. */
+.defile-x {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.defile-x::-webkit-scrollbar {
+  display: none;
+}
 
 @media print {
-  .sans-impression { display: none !important; }
-  body { background: #fff; }
+  .sans-impression {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
 }
