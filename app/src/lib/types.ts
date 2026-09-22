@@ -50,6 +50,9 @@ export type Ligne = {
   conso_prevue: number | null;
   conso_manuelle: number | null;
   note: string | null;
+  /** Quantité jetée depuis le relevé précédent, en unités de stock. */
+  perte: number | null;
+  maj_le: string | null;
 };
 
 export type PointHistorique = {
@@ -62,8 +65,47 @@ export type PointHistorique = {
   conso: number | null;
 };
 
-/** Un intervalle entre deux relevés : ce qui a été consommé, et en combien de jours. */
-export type PointConso = { date: string; conso: number; jours: number };
+/**
+ * Un intervalle entre deux relevés : ce qui a été consommé, et en combien de
+ * jours. `creneau` est le libellé du relevé qui ouvre l'intervalle : chez un
+ * fournisseur livré deux fois par semaine, il distingue la période qui couvre
+ * le week-end de celle qui ne le couvre pas.
+ */
+export type PointConso = { date: string; conso: number; jours: number; creneau?: string };
+
+/** Un relevé passé, tel qu'on le montre au chef : daté, en clair. */
+export type ReleveResume = {
+  date: string;
+  stock: number | null;
+  colis: number | null;
+  livre: number | null;
+  perte: number | null;
+  conso: number | null;
+};
+
+export type Reception = {
+  id: number;
+  type: "livraison" | "depannage";
+  session_id: number | null;
+  fournisseur_id: number | null;
+  date_reception: string;
+  provenance: string | null;
+  statut: "brouillon" | "validee";
+  note: string | null;
+  created_at: string;
+  validee_le: string | null;
+};
+
+export type ReceptionLigne = {
+  id: number;
+  reception_id: number;
+  produit_id: number;
+  colis_commandes: number | null;
+  colis_recus: number | null;
+  unites: number | null;
+  recu: boolean;
+  maj_le: string;
+};
 
 /** Charge utile de la fonction SQL `cmd_commande`. */
 export type CommandeRpc = {
@@ -75,5 +117,6 @@ export type CommandeRpc = {
     nbReleves: number;
     stockPrecedent: number | null;
     serie: PointConso[];
+    releves: ReleveResume[];
   }[];
 };

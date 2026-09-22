@@ -51,15 +51,23 @@ export default async function Commande({
           fact: Number(l.produit.fact),
           stock: l.ligne.stock === null ? null : Number(l.ligne.stock),
           colis: l.ligne.colis === null ? null : Number(l.ligne.colis),
+          perte: l.ligne.perte === null ? null : Number(l.ligne.perte),
+          majLe: l.ligne.maj_le ? Date.parse(l.ligne.maj_le) : 0,
           suggestionEnregistree:
             l.ligne.suggestion === null ? null : Number(l.ligne.suggestion),
           consoPrevue: l.prevision.consoPrevue,
           fiabilite: l.prevision.fiabilite,
           nbPoints: l.prevision.nbPoints,
-          derniereConso: l.prevision.derniere,
           stockPrecedent: l.stockPrecedent,
           joursHorizon: l.prevision.joursHorizon,
-          serie: l.prevision.serie.slice(-8),
+          releves: l.releves.map((r) => ({
+            date: r.date,
+            stock: r.stock === null ? null : Number(r.stock),
+            colis: r.colis === null ? null : Number(r.colis),
+            livre: r.livre === null ? null : Number(r.livre),
+            perte: r.perte === null ? null : Number(r.perte),
+            conso: r.conso === null ? null : Number(r.conso),
+          })),
         }))}
       />
     </main>

@@ -1,12 +1,20 @@
 import Link from "next/link";
 import Entete from "./Entete";
-import { getAccueil } from "@/lib/model";
+import { getAccueil, getReceptionsAccueil } from "@/lib/model";
+import Precharger from "./Precharger";
 import { dateMoyenne } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function Accueil() {
-  const resumes = await getAccueil();
+  const [resumes, receptions] = await Promise.all([getAccueil(), getReceptionsAccueil()]);
+  const aReceptionner = receptions.aReceptionner.length;
+  // Les relevés en cours sont mis en cache dès l'accueil : si le réseau lâche
+  // avant d'avoir ouvert la page, elle s'ouvrira quand même.
+  const aPrecharger = [
+    "/receptions",
+    ...resumes.flatMap((r) => (r.brouillon ? [`/commande/${r.brouillon.id}`] : [])),
+  ];
 
   return (
     <main className="pb-12">
@@ -18,7 +26,7 @@ export default async function Accueil() {
 
       <div className="mx-auto max-w-2xl space-y-3 px-4 py-4">
         {resumes.map(
-          ({ fournisseur, nbProduits, derniereValidee, brouillon, prochaineDate }) => (
+          ({ fournisseur, nbProduits, derniereValidee, brouillon, prochaineDate, prochainLibelle }) => (
             <section
               key={fournisseur.id}
               className="overflow-hidden rounded-2xl border border-neutre-100 bg-white shadow-sm"
@@ -63,33 +71,56 @@ export default async function Accueil() {
                   </span>
                 </Link>
               ) : (
-                <form action="/api/commande" method="post">
+                <form
+                  action="/api/commande"
+                  method="post"
+                  className="flex items-center gap-2 border-t border-neutre-100 px-4 py-3"
+                >
                   <input type="hidden" name="fournisseur" value={fournisseur.id} />
-                  <input type="hidden" name="date" value={prochaineDate} />
-                  <input
-                    type="hidden"
-                    name="libelle"
-                    value={
-                      fournisseur.frequence === "bi-hebdo" ? "Dimanche pour mardi" : ""
-                    }
-                  />
-                  <button
-                    type="submit"
-                    className="w-full border-t border-neutre-100 px-4 py-3 text-left"
-                  >
+                  <button type="submit" className="min-w-0 flex-1 text-left">
                     <span className="block font-titre text-base font-semibold text-rouge-700">
                       Commencer le relevé
                     </span>
                     <span className="mt-0.5 block text-sm text-neutre-500">
-                      pour la commande du {dateMoyenne(prochaineDate)}
+                      {prochainLibelle || `commande du ${dateMoyenne(prochaineDate)}`}
                     </span>
                   </button>
+                  <input
+                    type="date"
+                    name="date"
+                    required
+                    defaultValue={prochaineDate}
+                    aria-label="Date de la commande"
+                    className="min-h-11 shrink-0 rounded-xl border border-neutre-200 bg-white px-2 text-sm"
+                  />
                 </form>
               )}
             </section>
           ),
         )}
+
+        <Link
+          href="/receptions"
+          className="flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm"
+        >
+          <span className="min-w-0">
+            <span className="block font-titre text-lg font-semibold leading-tight">
+              Réceptions
+            </span>
+            <span className="mt-1 block text-sm text-neutre-500">
+              Livraisons à cocher, dépannages
+            </span>
+          </span>
+          {aReceptionner ? (
+            <span className="shrink-0 rounded-full bg-rouge-700 px-2.5 py-1 text-xs font-semibold text-white">
+              {aReceptionner} à réceptionner
+            </span>
+          ) : (
+            <span aria-hidden="true" className="text-neutre-400">→</span>
+          )}
+        </Link>
       </div>
+      <Precharger urls={aPrecharger} />
     </main>
   );
 }

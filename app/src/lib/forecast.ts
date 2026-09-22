@@ -49,12 +49,22 @@ export function horizonHabituel(serie: { jours: number }[], defaut = 7) {
  * `nbRelevesTotal` peut dépasser la longueur de la série : celle-ci est bornée
  * aux derniers relevés, alors que l'écran annonce l'historique réellement
  * disponible.
+ *
+ * `creneau` sert aux fournisseurs livrés deux fois par semaine. Chez Cledor, la
+ * commande du mercredi pour vendredi couvre le week-end, celle du dimanche pour
+ * mardi non : ni le rythme ni la durée ne sont les mêmes. Dès qu'il y a assez
+ * de périodes du même créneau, on ne regarde qu'elles.
  */
 export function prevoir(
-  serie: PointConso[],
+  serieComplete: PointConso[],
   joursHorizon?: number,
   nbRelevesTotal?: number,
+  creneau?: string,
 ): Prevision {
+  const memeCreneau = creneau
+    ? serieComplete.filter((s) => (s.creneau ?? "") === creneau)
+    : [];
+  const serie = memeCreneau.length >= 3 ? memeCreneau : serieComplete;
   const parJour = serie.map((s) => s.conso / s.jours);
   const n = parJour.length;
   const horizon = joursHorizon ?? horizonHabituel(serie);
@@ -90,8 +100,10 @@ export function prevoir(
     consoParJour: Math.round(consoParJour * 1000) / 1000,
     joursHorizon: horizon,
     fiabilite,
-    serie,
-    derniere: n ? serie[serie.length - 1].conso : null,
+    serie: serieComplete,
+    derniere: serieComplete.length
+      ? serieComplete[serieComplete.length - 1].conso
+      : null,
     variation,
     nbPoints: nbRelevesTotal ?? n,
     anomalies,

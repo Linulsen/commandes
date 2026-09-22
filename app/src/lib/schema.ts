@@ -4,6 +4,8 @@ import type {
   Ligne,
   PointHistorique,
   Produit,
+  Reception,
+  ReceptionLigne,
   Session,
   Zone,
 } from "./types";
@@ -33,6 +35,11 @@ export type Database = {
       cmd_lignes: Table<
         Ligne,
         Partial<Ligne> & { session_id: number; produit_id: number }
+      >;
+      cmd_receptions: Table<Reception>;
+      cmd_reception_lignes: Table<
+        ReceptionLigne,
+        Partial<ReceptionLigne> & { reception_id: number; produit_id: number }
       >;
     };
     Views: {

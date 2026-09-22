@@ -30,3 +30,7 @@ export function qte(n: number | null | undefined) {
     ? String(arrondi)
     : arrondi.toFixed(2).replace(/0$/, "").replace(".", ",");
 }
+
+/** Pour chercher un produit sans se soucier des accents ni des majuscules. */
+export const normaliser = (s: string) =>
+  s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();

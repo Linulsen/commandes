@@ -19,5 +19,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest).*)"],
+  // Le service worker, le manifeste et l'icône doivent se charger avant
+  // toute connexion : le navigateur les demande sans cookie.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icone.svg).*)"],
 };

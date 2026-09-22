@@ -5,9 +5,16 @@ import type {
   Fournisseur,
   Ligne,
   Produit,
+  Reception,
+  ReceptionLigne,
+  ReleveResume,
   Session,
   Zone,
 } from "./types";
+
+/** Ordre alphabétique à la française : « Écrasé » avec les E, pas après Z. */
+export const alpha = (a: string, b: string) =>
+  a.localeCompare(b, "fr", { sensitivity: "base", numeric: true });
 
 export type LigneEnrichie = {
   ligne: Ligne;
@@ -19,6 +26,8 @@ export type LigneEnrichie = {
   couverture: number | null;
   /** Stock relevé la fois précédente, pour situer la saisie en cours. */
   stockPrecedent: number | null;
+  /** Les quatre derniers relevés, du plus récent au plus ancien. */
+  releves: ReleveResume[];
 };
 
 /**
@@ -93,7 +102,12 @@ export async function getCommande(sessionId: number) {
 
   const lignes: LigneEnrichie[] = paquet.lignes.map((brut) => {
     const produit = brut.produit;
-    const prevision = prevoir(brut.serie, undefined, brut.nbReleves);
+    const prevision = prevoir(
+      brut.serie,
+      undefined,
+      brut.nbReleves,
+      session.libelle || undefined,
+    );
     const ligne: Ligne = {
       id: brut.ligne.id ?? 0,
       session_id: sessionId,
@@ -104,6 +118,8 @@ export async function getCommande(sessionId: number) {
       conso_prevue: brut.ligne.conso_prevue ?? null,
       conso_manuelle: brut.ligne.conso_manuelle ?? null,
       note: brut.ligne.note ?? null,
+      perte: brut.ligne.perte ?? null,
+      maj_le: brut.ligne.maj_le ?? null,
     };
     return {
       ligne,
@@ -119,8 +135,18 @@ export async function getCommande(sessionId: number) {
       alerte: alerte(prevision, ligne.stock),
       couverture: couverture(prevision, ligne.stock),
       stockPrecedent: brut.stockPrecedent,
+      releves: brut.releves ?? [],
     };
   });
+
+  // Nicolas cherche un produit par son nom en parcourant la chambre : l'ordre
+  // du classeur, hérité de l'ordre de saisie, ne lui disait rien.
+  const rangZone = new Map(zones.map((z, i) => [z.id, i]));
+  lignes.sort(
+    (a, b) =>
+      rangZone.get(a.zone.id)! - rangZone.get(b.zone.id)! ||
+      alpha(a.produit.nom, b.produit.nom),
+  );
 
   return { session, zones, lignes };
 }
@@ -175,13 +201,40 @@ export async function ouvrirSession(
   return session;
 }
 
-/** Date du prochain relevé : une semaine après le dernier, ou aujourd'hui. */
+/** Les deux créneaux d'un fournisseur livré deux fois par semaine. */
+const CRENEAUX = [
+  { jour: 0, libelle: "Dimanche pour mardi" },
+  { jour: 3, libelle: "Mercredi pour vendredi" },
+];
+
+/**
+ * Créneau d'une commande bi-hebdomadaire, d'après son jour : du dimanche au
+ * mardi on prépare la livraison du mardi, du mercredi au samedi celle du
+ * vendredi. Ce libellé était écrit en dur, si bien que les relevés du mercredi
+ * se confondaient avec ceux du dimanche.
+ */
+export function libelleCreneau(date: string, frequence: string) {
+  if (frequence !== "bi-hebdo") return "";
+  const jour = new Date(`${date}T12:00:00Z`).getUTCDay();
+  return jour >= 3 ? CRENEAUX[1].libelle : CRENEAUX[0].libelle;
+}
+
+/**
+ * Date du prochain relevé : une semaine après le dernier, ou aujourd'hui.
+ * Chez un fournisseur bi-hebdomadaire, le prochain dimanche ou mercredi.
+ */
 export function prochaineDate(derniere: string | null, frequence: string) {
-  const pas = frequence === "bi-hebdo" ? 3 : 7;
-  const base = derniere ? new Date(`${derniere}T12:00:00Z`) : new Date();
-  if (derniere) base.setUTCDate(base.getUTCDate() + pas);
   const aujourdhui = new Date();
   aujourdhui.setUTCHours(12, 0, 0, 0);
+  const base = derniere ? new Date(`${derniere}T12:00:00Z`) : new Date(aujourdhui);
+
+  if (frequence === "bi-hebdo") {
+    const d = new Date(Math.max(base.getTime() + (derniere ? 864e5 : 0), aujourdhui.getTime()));
+    while (!CRENEAUX.some((c) => c.jour === d.getUTCDay())) d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  if (derniere) base.setUTCDate(base.getUTCDate() + 7);
   return (base > aujourdhui ? base : aujourdhui).toISOString().slice(0, 10);
 }
 
@@ -191,6 +244,7 @@ export type ResumeFournisseur = {
   derniereValidee: Session | null;
   brouillon: (Session & { saisis: number; total: number }) | null;
   prochaineDate: string;
+  prochainLibelle: string;
 };
 
 /** Ce qu'il faut pour l'accueil : où en est chaque fournisseur. */
@@ -239,10 +293,188 @@ export async function getAccueil(): Promise<ResumeFournisseur[]> {
       brouillon: b
         ? { ...b, ...(compte.get(b.id) ?? { saisis: 0, total: 0 }) }
         : null,
-      prochaineDate: prochaineDate(
-        derniereValidee?.date_commande ?? null,
-        f.frequence,
-      ),
+      ...(() => {
+        const date = prochaineDate(derniereValidee?.date_commande ?? null, f.frequence);
+        return { prochaineDate: date, prochainLibelle: libelleCreneau(date, f.frequence) };
+      })(),
     };
   });
+}
+
+/* ------------------------------------------------------------------------ */
+/* Réceptions                                                               */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Commandes validées depuis l'application et pas encore réceptionnées. Les
+ * relevés repris du classeur n'ont pas de date de validation : ils ne sont pas
+ * proposés, personne n'ira réceptionner une livraison de juin.
+ */
+export async function getReceptionsAccueil() {
+  const depuis = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  const [sessions, receptions, fournisseurs] = await Promise.all([
+    sb()
+      .from("cmd_sessions")
+      .select("*")
+      .eq("statut", "validee")
+      .not("validee_le", "is", null)
+      .gte("date_commande", depuis)
+      .order("date_commande", { ascending: false }),
+    sb()
+      .from("cmd_receptions")
+      .select("*")
+      .order("date_reception", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(60),
+    getFournisseurs(),
+  ]);
+  if (sessions.error) throw new Error(sessions.error.message);
+  if (receptions.error) throw new Error(receptions.error.message);
+  const toutes = (receptions.data ?? []) as Reception[];
+  const parSession = new Map(
+    toutes.filter((r) => r.type === "livraison").map((r) => [r.session_id, r]),
+  );
+  const aReceptionner = ((sessions.data ?? []) as Session[]).filter(
+    (s) => parSession.get(s.id)?.statut !== "validee",
+  );
+  return {
+    aReceptionner: aReceptionner.map((s) => ({
+      session: s,
+      reception: parSession.get(s.id) ?? null,
+    })),
+    enCours: toutes.filter((r) => r.statut === "brouillon"),
+    recentes: toutes.filter((r) => r.statut === "validee").slice(0, 20),
+    fournisseurs,
+  };
+}
+
+/**
+ * Ouvre la réception d'une commande, en recopiant ce qui a été commandé : c'est
+ * la base à cocher, et la référence pour repérer ce qui manque.
+ */
+export async function ouvrirReception(sessionId: number) {
+  const existante = await sb()
+    .from("cmd_receptions")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("type", "livraison")
+    .maybeSingle();
+  if (existante.error) throw new Error(existante.error.message);
+  if (existante.data) return existante.data as Reception;
+
+  const commande = await getCommande(sessionId);
+  if (!commande) throw new Error("Commande inconnue");
+
+  const { data, error } = await sb()
+    .from("cmd_receptions")
+    .insert({
+      type: "livraison",
+      session_id: sessionId,
+      fournisseur_id: commande.session.fournisseur_id,
+      date_reception: new Date().toISOString().slice(0, 10),
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  const reception = data as Reception;
+
+  const commandees = commande.lignes
+    .map((l) => ({ l, colis: quantiteRetenue(l) }))
+    .filter((x) => x.colis > 0);
+  if (commandees.length) {
+    const ins = await sb().from("cmd_reception_lignes").insert(
+      commandees.map(({ l, colis }) => ({
+        reception_id: reception.id,
+        produit_id: l.produit.id,
+        colis_commandes: colis,
+        colis_recus: colis,
+        unites: colis * Number(l.produit.fact),
+        recu: false,
+      })),
+    );
+    if (ins.error) throw new Error(ins.error.message);
+  }
+  return reception;
+}
+
+export async function creerDepannage(provenance: string | null) {
+  const { data, error } = await sb()
+    .from("cmd_receptions")
+    .insert({
+      type: "depannage",
+      provenance,
+      date_reception: new Date().toISOString().slice(0, 10),
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as Reception;
+}
+
+export type ProduitCatalogue = Pick<
+  Produit,
+  "id" | "nom" | "conditionnement" | "unite" | "fact" | "zone_id"
+> & { zone: string; fournisseurId: number };
+
+/**
+ * Tout ce qu'il faut pour l'écran de réception : la réception, ses lignes, et
+ * le catalogue dans lequel piocher un produit ajouté — celui du fournisseur
+ * pour une livraison, tous les produits pour un dépannage.
+ */
+export async function getReception(id: number) {
+  const { data, error } = await sb()
+    .from("cmd_receptions")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const reception = data as Reception;
+
+  const [lignes, zones, fournisseurs, session] = await Promise.all([
+    selectAll<ReceptionLigne>(() =>
+      sb()
+        .from("cmd_reception_lignes")
+        .select("*")
+        .eq("reception_id", id)
+        .order("id"),
+    ),
+    getZones(reception.fournisseur_id ?? undefined),
+    getFournisseurs(),
+    reception.session_id ? getSession(reception.session_id) : Promise.resolve(null),
+  ]);
+  const zoneParId = new Map(zones.map((z) => [z.id, z]));
+  const produits = await selectAll<Produit>(() =>
+    sb()
+      .from("cmd_produits")
+      .select("*")
+      .in("zone_id", zones.map((z) => z.id))
+      .order("id"),
+  );
+  const rangZone = new Map(zones.map((z, i) => [z.id, i]));
+  const catalogue: ProduitCatalogue[] = produits
+    .filter((p) => p.actif || lignes.some((l) => l.produit_id === p.id))
+    .map((p) => ({
+      id: p.id,
+      nom: p.nom,
+      conditionnement: p.conditionnement,
+      unite: p.unite,
+      fact: Number(p.fact),
+      zone_id: p.zone_id,
+      zone: zoneParId.get(p.zone_id)?.nom ?? "",
+      fournisseurId: zoneParId.get(p.zone_id)?.fournisseur_id ?? 0,
+    }))
+    .sort(
+      (a, b) =>
+        rangZone.get(a.zone_id)! - rangZone.get(b.zone_id)! || alpha(a.nom, b.nom),
+    );
+
+  return {
+    reception,
+    session,
+    lignes,
+    catalogue,
+    fournisseur: fournisseurs.find((f) => f.id === reception.fournisseur_id) ?? null,
+    fournisseurs,
+  };
 }

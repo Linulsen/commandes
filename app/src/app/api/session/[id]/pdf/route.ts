@@ -10,8 +10,15 @@ export const runtime = "nodejs";
 
 const MARGE = 48;
 
+/**
+ * Bon de commande, avec le stock relevé en regard de chaque quantité : sans
+ * lui, le papier ne disait pas pourquoi on commandait autant.
+ *
+ * `?complet=1` rend le relevé entier — tous les produits comptés, commandés ou
+ * non — pour garder une trace papier de l'inventaire.
+ */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const id = Number((await params).id);
@@ -25,9 +32,10 @@ export async function GET(
     (f) => f.id === commande.session.fournisseur_id,
   )!;
 
+  const complet = new URL(req.url).searchParams.get("complet") === "1";
   const aCommander = commande.lignes
     .map((l) => ({ ...l, colis: quantiteRetenue(l) }))
-    .filter((l) => l.colis > 0);
+    .filter((l) => (complet ? l.ligne.stock !== null || l.colis > 0 : l.colis > 0));
 
   const doc = new PDFDocument({ size: "A4", margin: MARGE });
   const morceaux: Buffer[] = [];
@@ -38,7 +46,7 @@ export async function GET(
 
   const largeur = doc.page.width - MARGE * 2;
 
-  doc.font("Helvetica-Bold").fontSize(18).text("Bon de commande");
+  doc.font("Helvetica-Bold").fontSize(18).text(complet ? "Relevé des stocks" : "Bon de commande");
   doc.moveDown(0.2);
   doc.font("Helvetica").fontSize(11).fillColor("#4d5668");
   doc.text(
@@ -58,8 +66,9 @@ export async function GET(
   }
 
   const colonnes = [
-    { titre: "Produit", x: MARGE, w: largeur - 210 },
-    { titre: "Cond.", x: MARGE + largeur - 210, w: 60 },
+    { titre: "Produit", x: MARGE, w: largeur - 270 },
+    { titre: "Cond.", x: MARGE + largeur - 270, w: 60 },
+    { titre: "Stock", x: MARGE + largeur - 210, w: 60 },
     { titre: "Colis", x: MARGE + largeur - 150, w: 50 },
     { titre: "Soit", x: MARGE + largeur - 100, w: 100 },
   ];
@@ -74,7 +83,7 @@ export async function GET(
       });
       doc.moveUp();
     }
-    doc.moveDown(0.8);
+    doc.moveDown(1.2);
     doc.fillColor("#171b24");
   };
 
@@ -105,16 +114,22 @@ export async function GET(
       doc.text(l.produit.conditionnement ?? "—", colonnes[1].x, y, {
         width: colonnes[1].w,
       });
-      doc.font("Helvetica-Bold").text(qte(l.colis), colonnes[2].x, y, {
-        width: colonnes[2].w,
+      doc.text(
+        l.ligne.stock === null ? "—" : `${qte(Number(l.ligne.stock))} ${l.produit.unite ?? "u"}`,
+        colonnes[2].x,
+        y,
+        { width: colonnes[2].w, align: "right" },
+      );
+      doc.font("Helvetica-Bold").text(l.colis > 0 ? qte(l.colis) : "—", colonnes[3].x, y, {
+        width: colonnes[3].w,
         align: "right",
       });
       doc.font("Helvetica").fillColor("#4d5668");
       doc.text(
-        `${qte(l.colis * Number(l.produit.fact))} ${l.produit.unite ?? "u"}`,
-        colonnes[3].x,
+        l.colis > 0 ? `${qte(l.colis * Number(l.produit.fact))} ${l.produit.unite ?? "u"}` : "",
+        colonnes[4].x,
         y,
-        { width: colonnes[3].w, align: "right" },
+        { width: colonnes[4].w, align: "right" },
       );
       doc.fillColor("#171b24");
       doc.y = Math.max(bas, y + 12);
@@ -143,7 +158,7 @@ export async function GET(
   doc.end();
   const pdf = await fini;
 
-  const nom = `commande-${fournisseur.slug}-${commande.session.date_commande}.pdf`;
+  const nom = `${complet ? "releve" : "commande"}-${fournisseur.slug}-${commande.session.date_commande}.pdf`;
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

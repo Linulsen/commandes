@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Jost, Nunito_Sans } from "next/font/google";
 import "./globals.css";
+import HorsLigne from "./HorsLigne";
 
 // Les deux polices de Del Arte disponibles librement. Leur police de titrage
 // maison, Bely Display, est sous licence commerciale : Jost en tient lieu.
@@ -23,6 +24,7 @@ export const metadata: Metadata = {
   description:
     "Relevé des chambres, prévision des consommations et bons de commande du restaurant.",
   appleWebApp: { capable: true, title: "Commandes", statusBarStyle: "default" },
+  icons: { icon: "/icone.svg" },
 };
 
 export const viewport: Viewport = {
@@ -41,7 +43,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr" className={`${titre.variable} ${texte.variable}`}>
-      <body className="min-h-screen font-sans antialiased">{children}</body>
+      <body className="min-h-screen font-sans antialiased">
+        {children}
+        <HorsLigne />
+      </body>
     </html>
   );
 }
