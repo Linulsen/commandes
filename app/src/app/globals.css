@@ -36,6 +36,7 @@
 
   --color-ambre-50: #fff1e6;
   --color-ambre-100: #ffeed5;
+  --color-ambre-400: #ff9a4d;
   --color-ambre-700: #bf3b0f;
 
   --font-titre: var(--police-titre), Georgia, serif;
@@ -57,12 +58,31 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* Un appui sur un bouton ne doit pas surligner en bleu système. */
+/* Un appui sur un bouton ne doit pas surligner en bleu système, ni — deux
+   touches rapides sur le pavé — déclencher le zoom du double appui. */
 button,
 a,
 select,
 input {
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Curseur de la saisie au pavé : le champ n'est pas un vrai champ texte. */
+.curseur::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.12em;
+  background: var(--color-rouge-700);
+  animation: clignote 1s steps(1) infinite;
+}
+@keyframes clignote {
+  50% {
+    opacity: 0;
+  }
 }
 
 /* Le relevé se fait au pouce, en chambre froide : les champs numériques ne

@@ -17,7 +17,7 @@ export default function EtatEnvoi({ etat }: { etat: ReturnType<typeof useFileAtt
   if (etat.enAttente > 0) {
     return (
       <span className="font-semibold text-ambre-700">
-        {etat.enAttente} saisie{etat.enAttente > 1 ? "s" : ""} gardée
+        {etat.enAttente} saisie{etat.enAttente > 1 ? "s" : ""} en orange, gardée
         {etat.enAttente > 1 ? "s" : ""} sur le téléphone
         {etat.envoi ? " · envoi…" : etat.erreur ? " · hors ligne" : ""}
       </span>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import Entete from "../Entete";
 import { getFournisseurs, getSessions } from "@/lib/model";
 import { dateMoyenne } from "@/lib/format";
+import BarreNav from "../BarreNav";
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +14,10 @@ export default async function Historique() {
   const nom = new Map(fournisseurs.map((f) => [f.id, f.nom]));
 
   return (
-    <main className="pb-12">
+    <main style={{ paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}>
       <Entete
         titre="Historique"
         sousTitre="Chaque relevé validé affine la prévision des commandes suivantes"
-        retour={{ href: "/", libelle: "Commandes" }}
       />
 
       <div className="mx-auto max-w-2xl px-4 py-4">
@@ -51,6 +51,7 @@ export default async function Historique() {
           ))}
         </ul>
       </div>
+      <BarreNav actif="/historique" />
     </main>
   );
 }

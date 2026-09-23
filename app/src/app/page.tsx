@@ -2,6 +2,8 @@ import Link from "next/link";
 import Entete from "./Entete";
 import { getAccueil, getReceptionsAccueil } from "@/lib/model";
 import Precharger from "./Precharger";
+import Installer from "./Installer";
+import BarreNav from "./BarreNav";
 import { dateMoyenne } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -17,14 +19,14 @@ export default async function Accueil() {
   ];
 
   return (
-    <main className="pb-12">
+    <main style={{ paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}>
       <Entete
         titre="Commandes"
         sousTitre="Relevé des chambres et quantités à commander"
-        lien={{ href: "/historique", libelle: "Historique" }}
       />
 
       <div className="mx-auto max-w-2xl space-y-3 px-4 py-4">
+        <Installer />
         {resumes.map(
           ({ fournisseur, nbProduits, derniereValidee, brouillon, prochaineDate, prochainLibelle }) => (
             <section
@@ -121,6 +123,7 @@ export default async function Accueil() {
         </Link>
       </div>
       <Precharger urls={aPrecharger} />
+      <BarreNav actif="/" />
     </main>
   );
 }

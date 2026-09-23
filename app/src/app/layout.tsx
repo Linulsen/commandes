@@ -24,7 +24,8 @@ export const metadata: Metadata = {
   description:
     "Relevé des chambres, prévision des consommations et bons de commande du restaurant.",
   appleWebApp: { capable: true, title: "Commandes", statusBarStyle: "default" },
-  icons: { icon: "/icone.svg" },
+  // iOS ignore le SVG sur l'écran d'accueil et prendrait une capture de la page.
+  icons: { icon: "/icone.svg", apple: "/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {

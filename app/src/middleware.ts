@@ -19,7 +19,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Le service worker, le manifeste et l'icône doivent se charger avant
+  // Le service worker, le manifeste et les icônes doivent se charger avant
   // toute connexion : le navigateur les demande sans cookie.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icone.svg).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icone.svg|icone-192.png|icone-512.png|icone-masquable-512.png|apple-touch-icon.png).*)"],
 };

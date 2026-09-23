@@ -2,6 +2,7 @@ import Link from "next/link";
 import Entete from "../Entete";
 import { getReceptionsAccueil } from "@/lib/model";
 import { dateMoyenne } from "@/lib/format";
+import BarreNav from "../BarreNav";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +17,10 @@ export default async function Receptions() {
   const depannagesEnCours = enCours.filter((r) => r.type === "depannage");
 
   return (
-    <main className="pb-12">
+    <main style={{ paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}>
       <Entete
         titre="Réceptions"
         sousTitre="Ce qui est vraiment arrivé en chambre"
-        retour={{ href: "/", libelle: "Commandes" }}
       />
 
       <div className="mx-auto max-w-2xl space-y-5 px-4 py-4">
@@ -152,6 +152,7 @@ export default async function Receptions() {
           </section>
         ) : null}
       </div>
+      <BarreNav actif="/receptions" />
     </main>
   );
 }

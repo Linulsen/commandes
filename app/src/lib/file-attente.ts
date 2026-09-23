@@ -42,17 +42,26 @@ const URL_CANAL: Record<Canal, string> = {
 
 type Etat = {
   enAttente: number;
+  /** Lignes pas encore confirmées par le serveur, pour les repérer à l'écran. */
+  cles: ReadonlySet<string>;
   envoi: boolean;
   erreur: string | null;
   /** Le serveur a refusé l'accès : il faut ressaisir le code. */
   deconnecte: boolean;
 };
 
-let etat: Etat = { enAttente: 0, envoi: false, erreur: null, deconnecte: false };
+let etat: Etat = {
+  enAttente: 0,
+  cles: new Set(),
+  envoi: false,
+  erreur: null,
+  deconnecte: false,
+};
 const abonnes = new Set<() => void>();
 
-function publier(patch: Partial<Etat>) {
+function publier(patch: Partial<Omit<Etat, "cles">>) {
   etat = { ...etat, ...patch };
+  if (patch.enAttente !== undefined) etat.cles = new Set(lireFile().map((e) => e.cle));
   abonnes.forEach((f) => f());
 }
 

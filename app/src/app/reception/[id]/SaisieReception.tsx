@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { normaliser, qte } from "@/lib/format";
 import {
@@ -12,7 +13,9 @@ import {
 } from "@/lib/file-attente";
 import type { ProduitCatalogue } from "@/lib/model";
 import type { Reception } from "@/lib/types";
+import { useEcranAllume } from "@/lib/ecran";
 import EtatEnvoi from "../../EtatEnvoi";
+import Pave, { frappeDe, frapper, montrerLigne, type Frappe, type Raccourci } from "../../Pave";
 
 export type LigneRec = {
   produitId: number;
@@ -67,6 +70,7 @@ export default function SaisieReception({
   const [provenance, setProvenance] = useState(reception.provenance ?? "");
   const [echec, setEchec] = useState<string | null>(null);
   const [confirmer, setConfirmer] = useState(false);
+  useEcranAllume(!fige);
 
   const produit = useMemo(() => new Map(catalogue.map((p) => [p.id, p])), [catalogue]);
 
@@ -136,6 +140,72 @@ export default function SaisieReception({
     return true;
   });
   const zones = [...new Set(affiches.map((p) => p.zone))];
+  // Ordre d'affichage, pour que « Suivant » descende la liste comme l'œil.
+  const ordre = zones.flatMap((z) => affiches.filter((p) => p.zone === z));
+
+  /* Pavé numérique : même saisie qu'au relevé. */
+  const [cible, setCible] = useState<number | null>(null);
+  const [frappe, setFrappe] = useState<Frappe>({ texte: "", neuf: true });
+  const frappeRef = useRef(frappe);
+  const [hauteurPave, setHauteurPave] = useState(0);
+
+  const ouvrirPave = useCallback(
+    (pid: number) => {
+      if (fige) return;
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      const f = frappeDe(etatsRef.current[pid]?.quantite ?? null);
+      frappeRef.current = f;
+      setFrappe(f);
+      setCible(pid);
+    },
+    [fige],
+  );
+  const toucher = (t: string) => {
+    if (cible === null) return;
+    const f = frapper(frappeRef.current, t);
+    frappeRef.current = f;
+    setFrappe(f);
+    const v = lireNombre(f.texte) ?? null;
+    // Saisir une quantité, c'est dire que le produit est arrivé.
+    if (v !== (etatsRef.current[cible]?.quantite ?? null))
+      modifier(cible, { quantite: v, recu: v !== null && v > 0 });
+  };
+  const suivant = () => {
+    const i = ordre.findIndex((p) => p.id === cible);
+    const prochain = i >= 0 ? ordre[i + 1] : undefined;
+    if (prochain) ouvrirPave(prochain.id);
+    else setCible(null);
+  };
+  useEffect(() => {
+    if (cible === null || !hauteurPave) return;
+    montrerLigne(document.querySelector(`[data-ligne="${cible}"]`), 0, hauteurPave);
+  }, [cible, hauteurPave]);
+
+  const produitCible = cible !== null ? produit.get(cible) : undefined;
+  const etatCible = cible !== null ? etats[cible] : undefined;
+  const raccourcis: [Raccourci | null, Raccourci | null] =
+    cible === null
+      ? [null, null]
+      : [
+          etatCible?.commandes != null
+            ? {
+                libelle: "Idem",
+                detail: `commandé ${qte(etatCible.commandes)}`,
+                action: () => {
+                  modifier(cible, { quantite: etatCible.commandes, recu: true });
+                  suivant();
+                },
+              }
+            : null,
+          {
+            libelle: depannage ? "Aucun" : "Pas livré",
+            detail: "0 et suivant",
+            action: () => {
+              modifier(cible, { quantite: 0, recu: false });
+              suivant();
+            },
+          },
+        ];
 
   const commandes = Object.values(etats).filter((e) => (e.commandes ?? 0) > 0);
   const recus = Object.values(etats).filter((e) => e.recu).length;
@@ -161,7 +231,10 @@ export default function SaisieReception({
       <div
         className="mx-auto max-w-2xl space-y-3 px-4 py-3"
         style={{
-          paddingBottom: "calc(var(--barre-basse) + env(safe-area-inset-bottom) + 1rem)",
+          paddingBottom:
+            cible !== null
+              ? `${hauteurPave + 16}px`
+              : "calc(var(--barre-basse) + env(safe-area-inset-bottom) + 1rem)",
         }}
       >
         <div className="rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
@@ -216,6 +289,7 @@ export default function SaisieReception({
               type="search"
               value={recherche}
               onChange={(e) => setRecherche(e.target.value)}
+              onFocus={() => setCible(null)}
               placeholder={depannage ? "Chercher le produit acheté" : "Chercher ou ajouter un produit"}
               enterKeyHint="search"
               className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700"
@@ -272,7 +346,10 @@ export default function SaisieReception({
                       etat={etats[p.id]}
                       depannage={depannage}
                       fige={fige}
+                      enAttente={envoi.cles.has(`reception:${reception.id}:${p.id}`)}
+                      frappe={cible === p.id ? frappe : null}
                       onModifier={modifier}
+                      onQuantite={ouvrirPave}
                     />
                   ))}
               </ul>
@@ -327,12 +404,40 @@ export default function SaisieReception({
         ) : null}
       </div>
 
+      {cible !== null && produitCible ? (
+        <Pave
+          titre={produitCible.nom}
+          detail={
+            depannage
+              ? `En ${produitCible.unite ?? "unités"}`
+              : etatCible?.commandes != null
+                ? `commandé ${qte(etatCible.commandes)} colis · en colis`
+                : "hors commande · en colis"
+          }
+          frappe={frappe}
+          raccourcis={raccourcis}
+          libelleSuivant="Suivant"
+          onTouche={toucher}
+          onSuivant={suivant}
+          onFermer={() => setCible(null)}
+          onHauteur={setHauteurPave}
+        />
+      ) : null}
+
       <footer
+        hidden={cible !== null}
         className="fixed inset-x-0 bottom-0 z-10 border-t border-neutre-100 bg-white/95 backdrop-blur"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-2.5">
-          <div className="min-h-11 min-w-0 flex-1 px-2">
+        <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-2.5">
+          <Link
+            href="/receptions"
+            aria-label="Retour aux réceptions"
+            className="-ml-1 flex min-h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-neutre-200 text-xl text-neutre-700"
+          >
+            ←
+          </Link>
+          <div className="min-h-11 min-w-0 flex-1 px-1">
             <p className="font-titre text-sm font-semibold tabular-nums">
               {depannage
                 ? `${recus} produit${recus > 1 ? "s" : ""}`
@@ -346,7 +451,7 @@ export default function SaisieReception({
             <button
               onClick={() => (manquants > 0 && !depannage ? setConfirmer(true) : valider())}
               disabled={recus === 0}
-              className="min-h-11 shrink-0 rounded-xl bg-vert-700 px-4 font-titre text-sm font-semibold text-white disabled:opacity-35"
+              className="min-h-12 shrink-0 rounded-xl bg-vert-700 px-4 font-titre text-sm font-semibold text-white disabled:opacity-35"
             >
               Valider
             </button>
@@ -357,34 +462,38 @@ export default function SaisieReception({
   );
 }
 
-function LigneProduit({
+const LigneProduit = memo(function LigneProduit({
   produit,
   etat,
   depannage,
   fige,
+  enAttente,
+  frappe,
   onModifier,
+  onQuantite,
 }: {
   produit: ProduitCatalogue;
   etat: Etat | undefined;
   depannage: boolean;
   fige: boolean;
+  enAttente: boolean;
+  frappe: Frappe | null;
   onModifier: (pid: number, patch: Partial<Etat> | "retirer") => void;
+  onQuantite: (pid: number) => void;
 }) {
   const recu = etat?.recu ?? false;
   const u = produit.unite ?? "u";
-  const [texte, setTexte] = useState(
-    etat?.quantite === null || etat?.quantite === undefined ? "" : qte(etat.quantite),
-  );
-  useEffect(() => {
-    const v = etat?.quantite ?? null;
-    if (lireNombre(texte) !== v) setTexte(v === null ? "" : qte(v));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etat?.quantite]);
+  const actif = frappe !== null;
   const ecart =
     !depannage && recu && etat?.commandes != null && etat.quantite !== etat.commandes;
 
   return (
-    <li className="flex items-center gap-3 border-b border-neutre-100 px-3 py-2 last:border-b-0">
+    <li
+      data-ligne={produit.id}
+      className={`flex items-center gap-3 border-b border-neutre-100 px-3 py-2 last:border-b-0 ${
+        actif ? "bg-rouge-50" : ""
+      }`}
+    >
       <button
         role="checkbox"
         aria-checked={recu}
@@ -396,7 +505,7 @@ function LigneProduit({
             quantite: etat?.quantite ?? etat?.commandes ?? (depannage ? null : 1),
           })
         }
-        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 text-lg font-bold ${
+        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 text-lg font-bold ${
           recu ? "border-vert-600 bg-vert-600 text-white" : "border-neutre-200 bg-white text-transparent"
         }`}
       >
@@ -412,39 +521,46 @@ function LigneProduit({
               : (produit.conditionnement ?? "")}
           {!depannage ? ` · ${qte(produit.fact)} ${u}/colis` : ""}
           {ecart ? <span className="font-semibold text-ambre-700"> · écart</span> : null}
+          {enAttente ? <span className="text-ambre-700"> · sur le téléphone</span> : null}
         </p>
         {etat && etat.commandes == null && !fige ? (
           <button
             onClick={() => onModifier(produit.id, "retirer")}
-            className="text-xs font-semibold text-neutre-500 underline underline-offset-4"
+            className="min-h-10 text-xs font-semibold text-neutre-500 underline underline-offset-4"
           >
             retirer
           </button>
         ) : null}
       </div>
-      <label className="shrink-0 text-right">
+      <div className="shrink-0 text-right">
         <span className="block text-[10px] font-semibold uppercase tracking-wide text-neutre-500">
           {depannage ? u : "colis"}
         </span>
-        <input
-          type="text"
-          inputMode="decimal"
-          enterKeyHint="done"
-          autoComplete="off"
+        <button
+          type="button"
           disabled={fige}
-          value={texte}
-          placeholder={etat?.commandes != null ? qte(etat.commandes) : "0"}
-          onChange={(e) => {
-            const v = lireNombre(e.target.value);
-            if (v === undefined) return;
-            setTexte(e.target.value);
-            // Saisir une quantité, c'est dire que le produit est arrivé.
-            onModifier(produit.id, { quantite: v, recu: v !== null && v > 0 });
-          }}
-          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-          className="min-h-11 w-20 rounded-xl border-2 border-neutre-200 px-2 text-right text-base font-semibold tabular-nums outline-none focus:border-rouge-700 disabled:border-neutre-100 disabled:bg-neutre-50"
-        />
-      </label>
+          onClick={() => onQuantite(produit.id)}
+          aria-label={`Quantité reçue de ${produit.nom}`}
+          className={`flex min-h-12 w-20 items-center justify-end rounded-xl border-2 px-2.5 text-lg font-semibold tabular-nums disabled:border-neutre-100 disabled:bg-neutre-50 ${
+            actif ? "border-rouge-700 bg-white" : "border-neutre-200 bg-white"
+          }`}
+        >
+          {actif ? (
+            <>
+              <span className={frappe.neuf && frappe.texte ? "rounded bg-rouge-100" : ""}>
+                {frappe.texte}
+              </span>
+              <span className="curseur" aria-hidden="true" />
+            </>
+          ) : etat?.quantite != null ? (
+            qte(etat.quantite)
+          ) : (
+            <span className="text-neutre-300">
+              {etat?.commandes != null ? qte(etat.commandes) : "0"}
+            </span>
+          )}
+        </button>
+      </div>
     </li>
   );
-}
+});
