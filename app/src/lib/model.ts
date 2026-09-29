@@ -334,9 +334,22 @@ export async function getReceptionsAccueil() {
   const parSession = new Map(
     toutes.filter((r) => r.type === "livraison").map((r) => [r.session_id, r]),
   );
-  const aReceptionner = ((sessions.data ?? []) as Session[]).filter(
+  const aReceptionnerTout = ((sessions.data ?? []) as Session[]).filter(
     (s) => parSession.get(s.id)?.statut !== "validee",
   );
+  // Un relevé validé sans commande n'attend aucune livraison.
+  const avecCommande = new Set<number>();
+  if (aReceptionnerTout.length) {
+    const { data, error } = await sb()
+      .from("cmd_lignes")
+      .select("session_id")
+      .in("session_id", aReceptionnerTout.map((s) => s.id))
+      // Même règle que quantiteRetenue : la quantité arrêtée, sinon la proposition.
+      .or("colis.gt.0,and(colis.is.null,stock.not.is.null,suggestion.gt.0)");
+    if (error) throw new Error(error.message);
+    for (const l of data ?? []) avecCommande.add(l.session_id as number);
+  }
+  const aReceptionner = aReceptionnerTout.filter((s) => avecCommande.has(s.id));
   return {
     aReceptionner: aReceptionner.map((s) => ({
       session: s,

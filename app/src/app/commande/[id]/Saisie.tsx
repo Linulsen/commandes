@@ -459,6 +459,7 @@ export default function Saisie({
             session={session}
             zones={zones}
             aCommander={aCommander}
+            saisis={saisis}
             fige={fige}
             onMarge={async (marge) => {
               const r = await fetch(`/api/session/${session.id}`, {
@@ -974,6 +975,7 @@ function Recapitulatif({
   session,
   zones,
   aCommander,
+  saisis,
   fige,
   onMarge,
   onValider,
@@ -982,6 +984,8 @@ function Recapitulatif({
   session: Session;
   zones: Zone[];
   aCommander: { l: LigneSaisie; colis: number; etat: Etat }[];
+  /** Nombre de produits dont le stock a été relevé. */
+  saisis: number;
   fige: boolean;
   onMarge: (marge: number) => void;
   onValider: () => void;
@@ -1015,8 +1019,11 @@ function Recapitulatif({
 
       {aCommander.length === 0 ? (
         <p className="rounded-2xl border border-neutre-100 bg-white p-4 text-sm text-neutre-500">
-          Rien à commander pour l’instant. Relevez les stocks chambre par
-          chambre : les quantités se remplissent au fur et à mesure.
+          {saisis === 0
+            ? "Rien à commander pour l’instant. Relevez les stocks chambre par chambre : les quantités se remplissent au fur et à mesure."
+            : fige
+              ? "Aucune commande passée pour ce relevé."
+              : "Rien à commander cette fois. Validez quand même : le relevé des stocks sera enregistré et servira au calcul des consommations de la semaine suivante."}
         </p>
       ) : (
         zones.map((z) => {
@@ -1054,19 +1061,27 @@ function Recapitulatif({
       <div className="sans-impression mt-5 space-y-2">
         {fige ? (
           <>
-            <p className="rounded-xl bg-vert-50 px-4 py-3 text-sm text-vert-800">
-              Commande validée. À la livraison, cochez ce qui est arrivé : la
-              prévision se fondera sur ce qui a vraiment été reçu.
-            </p>
-            <form action="/api/receptions" method="post">
-              <input type="hidden" name="session" value={session.id} />
-              <button
-                type="submit"
-                className="min-h-13 w-full rounded-xl bg-vert-700 px-4 font-titre text-base font-semibold text-white"
-              >
-                Réceptionner la livraison
-              </button>
-            </form>
+            {aCommander.length > 0 ? (
+              <>
+                <p className="rounded-xl bg-vert-50 px-4 py-3 text-sm text-vert-800">
+                  Commande validée. À la livraison, cochez ce qui est arrivé : la
+                  prévision se fondera sur ce qui a vraiment été reçu.
+                </p>
+                <form action="/api/receptions" method="post">
+                  <input type="hidden" name="session" value={session.id} />
+                  <button
+                    type="submit"
+                    className="min-h-13 w-full rounded-xl bg-vert-700 px-4 font-titre text-base font-semibold text-white"
+                  >
+                    Réceptionner la livraison
+                  </button>
+                </form>
+              </>
+            ) : (
+              <p className="rounded-xl bg-vert-50 px-4 py-3 text-sm text-vert-800">
+                Relevé validé, sans commande : rien ne sera livré.
+              </p>
+            )}
             <button
               onClick={onRouvrir}
               className="min-h-13 w-full rounded-xl border border-neutre-200 px-4 text-sm font-semibold text-neutre-700"
@@ -1077,10 +1092,10 @@ function Recapitulatif({
         ) : (
           <button
             onClick={onValider}
-            disabled={aCommander.length === 0}
+            disabled={saisis === 0}
             className="min-h-13 w-full rounded-xl bg-vert-700 px-4 font-titre text-base font-semibold text-white disabled:opacity-35"
           >
-            Valider la commande
+            {aCommander.length === 0 ? "Valider sans commande" : "Valider la commande"}
           </button>
         )}
         <a
