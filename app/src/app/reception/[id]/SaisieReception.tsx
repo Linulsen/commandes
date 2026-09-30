@@ -136,7 +136,12 @@ export default function SaisieReception({
   const terme = normaliser(recherche.trim());
   const affiches = catalogue.filter((p) => {
     if (terme) return normaliser(p.nom).includes(terme);
-    if (depannage || commandesSeules || fige) return p.id in etats;
+    if (depannage || commandesSeules || fige) {
+      // Une ligne de comptage (sucrines en sachet de 6) s'affiche sous le
+      // produit commandé qu'elle complète : le fournisseur peut livrer l'autre
+      // format.
+      return p.id in etats || (!fige && !depannage && p.comptePour !== null && p.comptePour in etats);
+    }
     return true;
   });
   const zones = [...new Set(affiches.map((p) => p.zone))];
@@ -484,6 +489,7 @@ const LigneProduit = memo(function LigneProduit({
   const recu = etat?.recu ?? false;
   const u = produit.unite ?? "u";
   const actif = frappe !== null;
+  const comptage = produit.comptePour !== null;
   const ecart =
     !depannage && recu && etat?.commandes != null && etat.quantite !== etat.commandes;
 
@@ -514,12 +520,21 @@ const LigneProduit = memo(function LigneProduit({
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold leading-snug">{produit.nom}</p>
         <p className="text-xs text-neutre-500">
-          {etat?.commandes != null
-            ? `commandé ${qte(etat.commandes)} colis`
-            : etat
-              ? "hors commande"
-              : (produit.conditionnement ?? "")}
-          {!depannage ? ` · ${qte(produit.fact)} ${u}/colis` : ""}
+          {comptage ? (
+            <>
+              en {u} · 1 = {qte(produit.equivalence ?? 1)}
+              {produit.nomRattache ? ` « ${produit.nomRattache} »` : ""}
+            </>
+          ) : (
+            <>
+              {etat?.commandes != null
+                ? `commandé ${qte(etat.commandes)} colis`
+                : etat
+                  ? "hors commande"
+                  : (produit.conditionnement ?? "")}
+              {!depannage ? ` · ${qte(produit.fact)} ${u}/colis` : ""}
+            </>
+          )}
           {ecart ? <span className="font-semibold text-ambre-700"> · écart</span> : null}
           {enAttente ? <span className="text-ambre-700"> · sur le téléphone</span> : null}
         </p>
@@ -534,7 +549,7 @@ const LigneProduit = memo(function LigneProduit({
       </div>
       <div className="shrink-0 text-right">
         <span className="block text-[10px] font-semibold uppercase tracking-wide text-neutre-500">
-          {depannage ? u : "colis"}
+          {depannage || comptage ? u : "colis"}
         </span>
         <button
           type="button"

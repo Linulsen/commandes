@@ -456,7 +456,14 @@ export async function creerDepannage(provenance: string | null) {
 export type ProduitCatalogue = Pick<
   Produit,
   "id" | "nom" | "conditionnement" | "unite" | "fact" | "zone_id"
-> & { zone: string; fournisseurId: number };
+> & {
+  zone: string;
+  fournisseurId: number;
+  /** Ligne de comptage : le produit qu'elle complète, et sa conversion. */
+  comptePour: number | null;
+  equivalence: number | null;
+  nomRattache: string | null;
+};
 
 /**
  * Tout ce qu'il faut pour l'écran de réception : la réception, ses lignes, et
@@ -505,6 +512,12 @@ export async function getReception(id: number) {
       zone_id: p.zone_id,
       zone: zoneParId.get(p.zone_id)?.nom ?? "",
       fournisseurId: zoneParId.get(p.zone_id)?.fournisseur_id ?? 0,
+      comptePour: p.compte_pour ?? null,
+      equivalence: p.equivalence == null ? null : Number(p.equivalence),
+      nomRattache:
+        p.compte_pour == null
+          ? null
+          : (produits.find((q) => q.id === p.compte_pour)?.nom ?? null),
     }))
     .sort(
       (a, b) =>
