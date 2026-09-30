@@ -492,7 +492,7 @@ export default function Saisie({
               className="flex items-center gap-2 border-b border-neutre-100 bg-neutre-50 py-1.5 pl-4.5 pr-2 text-[11px] font-semibold uppercase tracking-wide text-neutre-400"
             >
               <span className="flex-1">Produit</span>
-              <span className="w-[4.75rem] text-center">Stock</span>
+              <span className="w-[7.75rem] text-center">Stock</span>
               <span className="w-12 text-center">Colis</span>
             </li>
             {visibles.map((l) => {
@@ -574,6 +574,7 @@ export default function Saisie({
             cible.champ === "perte"
               ? `En ${ligneCible.unite ?? "unités"}, depuis le dernier relevé`
               : [
+                  `Stock en ${ligneCible.unite ?? "unités"}`,
                   ligneCible.stockPrecedent !== null
                     ? `dernier relevé ${qte(ligneCible.stockPrecedent)} ${ligneCible.unite ?? "u"}`
                     : null,
@@ -699,10 +700,20 @@ const LigneProduit = memo(function LigneProduit({
           {enAttente ? <span className="text-ambre-700">sur le téléphone</span> : null}
         </span>
       </button>
+      {/* L'unité de comptage, juste devant le champ : kg, main, BTL… */}
+      <span
+        onClick={fige ? undefined : () => onStock(ligne.produitId)}
+        aria-hidden="true"
+        className={`flex w-12 shrink-0 items-center justify-end truncate pr-1.5 text-xs font-semibold ${
+          ligne.unite ? "text-neutre-600" : "text-neutre-300"
+        }`}
+      >
+        {ligne.unite ?? "u"}
+      </span>
       <button
         onClick={() => onStock(ligne.produitId)}
         disabled={fige}
-        aria-label={`Stock de ${ligne.nom} : ${compte ? qte(etat.stock) : "à relever"}`}
+        aria-label={`Stock de ${ligne.nom} en ${ligne.unite ?? "unités"} : ${compte ? qte(etat.stock) : "à relever"}`}
         className={`my-1.5 flex min-h-12 w-[4.75rem] shrink-0 items-center justify-end rounded-xl border-2 px-2.5 text-lg font-semibold tabular-nums ${
           actif
             ? "border-rouge-700 bg-white"
