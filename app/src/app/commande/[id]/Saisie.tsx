@@ -24,6 +24,14 @@ export type LigneSaisie = {
   conditionnement: string | null;
   unite: string | null;
   fact: number;
+  /**
+   * Ligne de comptage seulement : le produit qu'elle complète. Elle ne se
+   * commande jamais ; son stock × `equivalence` s'ajoute à celui du produit.
+   */
+  comptePour: number | null;
+  equivalence: number | null;
+  /** Nom du produit complété, pour l'afficher sous la ligne de comptage. */
+  nomRattache: string | null;
   stock: number | null;
   colis: number | null;
   perte: number | null;
@@ -135,13 +143,72 @@ export default function Saisie({
    * pas ce qu'on n'a pas regardé. Sinon le récapitulatif annoncerait les 257
    * produits du fournisseur dès l'ouverture du relevé.
    */
+  // Lignes de comptage rattachées à chaque produit (ex. sucrines en sachet de
+  // 6 pour les sucrines en sachet de 3).
+  const rattachees = useMemo(() => {
+    const m = new Map<number, LigneSaisie[]>();
+    for (const l of lignes) {
+      if (l.comptePour === null) continue;
+      m.set(l.comptePour, [...(m.get(l.comptePour) ?? []), l]);
+    }
+    return m;
+  }, [lignes]);
+
+  /**
+   * Stock qui sert au calcul : celui de la ligne, plus celui de ses lignes de
+   * comptage converti. Lu dans `etatsRef`, tenu à jour avant chaque rendu.
+   */
+  const stockTotal = useCallback(
+    (l: LigneSaisie, e: Etat): number | null => {
+      const enfants = rattachees.get(l.produitId);
+      if (!enfants?.length) return e.stock;
+      let ajout = 0;
+      let compte = false;
+      for (const c of enfants) {
+        const ec = etatsRef.current[c.produitId] ?? etatInitial(c);
+        if (ec.stock === null) continue;
+        ajout += ec.stock * (c.equivalence ?? 1);
+        compte = true;
+      }
+      if (e.stock === null && !compte) return null;
+      return (e.stock ?? 0) + ajout;
+    },
+    [etatInitial, rattachees],
+  );
+
+  const propositionDe = useCallback(
+    (l: LigneSaisie, e: Etat) =>
+      l.comptePour !== null
+        ? 0
+        : suggerer(l.consoPrevue, stockTotal(l, e), l.fact, Number(session.marge)),
+    [session.marge, stockTotal],
+  );
+
   const colisRetenu = useCallback(
     (l: LigneSaisie, e: Etat) => {
+      // Une ligne de comptage ne se commande jamais.
+      if (l.comptePour !== null) return 0;
       if (e.force) return e.colis ?? 0;
-      if (e.stock === null) return 0;
-      return suggerer(l.consoPrevue, e.stock, l.fact, Number(session.marge));
+      if (stockTotal(l, e) === null) return 0;
+      return propositionDe(l, e);
     },
-    [session.marge],
+    [propositionDe, stockTotal],
+  );
+
+  // Écrit dans le téléphone tout de suite, envoyé dès que possible.
+  const envoyer = useCallback(
+    (l: LigneSaisie, etat: Etat) =>
+      mettreEnFile(`releve:${session.id}:${l.produitId}`, "releve", {
+        sessionId: session.id,
+        produitId: l.produitId,
+        stock: etat.stock,
+        colis: colisRetenu(l, etat),
+        suggestion: propositionDe(l, etat),
+        consoPrevue: l.consoPrevue,
+        perte: etat.perte,
+        force: etat.force,
+      }),
+    [colisRetenu, propositionDe, session.id],
   );
 
   const modifier = useCallback(
@@ -149,21 +216,21 @@ export default function Saisie({
       const l = parProduit.get(produitId);
       if (!l || fige) return;
       const etat = { ...(etatsRef.current[produitId] ?? etatInitial(l)), ...patch };
+      if (l.comptePour !== null) {
+        etat.colis = null;
+        etat.force = false;
+      }
       etatsRef.current = { ...etatsRef.current, [produitId]: etat };
       setEtats(etatsRef.current);
-      // Écrit dans le téléphone tout de suite, envoyé dès que possible.
-      mettreEnFile(`releve:${session.id}:${produitId}`, "releve", {
-        sessionId: session.id,
-        produitId,
-        stock: etat.stock,
-        colis: colisRetenu(l, etat),
-        suggestion: suggerer(l.consoPrevue, etat.stock, l.fact, Number(session.marge)),
-        consoPrevue: l.consoPrevue,
-        perte: etat.perte,
-        force: etat.force,
-      });
+      envoyer(l, etat);
+      // Le stock d'une ligne de comptage change la quantité proposée pour le
+      // produit qu'elle complète : on renvoie celui-ci aussi.
+      const principal = l.comptePour !== null ? parProduit.get(l.comptePour) : undefined;
+      if (principal) {
+        envoyer(principal, etatsRef.current[principal.produitId] ?? etatInitial(principal));
+      }
     },
-    [colisRetenu, etatInitial, fige, parProduit, session.id, session.marge],
+    [envoyer, etatInitial, fige, parProduit],
   );
   const etatDe = (l: LigneSaisie) => etats[l.produitId] ?? etatInitial(l);
 
@@ -504,6 +571,7 @@ export default function Saisie({
                   ligne={l}
                   etat={etat}
                   colis={colisRetenu(l, etat)}
+                  stockTotal={stockTotal(l, etat)}
                   fige={fige}
                   zone={terme ? nomZone.get(l.zoneId) : undefined}
                   enAttente={envoi.cles.has(`releve:${session.id}:${l.produitId}`)}
@@ -601,15 +669,11 @@ export default function Saisie({
           etat={etatDe(ligneFiche)}
           colis={colisRetenu(ligneFiche, etatDe(ligneFiche))}
           proposition={
-            etatDe(ligneFiche).stock === null
+            stockTotal(ligneFiche, etatDe(ligneFiche)) === null
               ? null
-              : suggerer(
-                  ligneFiche.consoPrevue,
-                  etatDe(ligneFiche).stock,
-                  ligneFiche.fact,
-                  Number(session.marge),
-                )
+              : propositionDe(ligneFiche, etatDe(ligneFiche))
           }
+          stockTotal={stockTotal(ligneFiche, etatDe(ligneFiche))}
           zone={nomZone.get(ligneFiche.zoneId)}
           fige={fige}
           enAttente={envoi.cles.has(`releve:${session.id}:${ligneFiche.produitId}`)}
@@ -634,6 +698,7 @@ const LigneProduit = memo(function LigneProduit({
   ligne,
   etat,
   colis,
+  stockTotal,
   fige,
   zone,
   enAttente,
@@ -644,6 +709,8 @@ const LigneProduit = memo(function LigneProduit({
   ligne: LigneSaisie;
   etat: Etat;
   colis: number;
+  /** Stock de la ligne et de ses lignes de comptage, converti. */
+  stockTotal: number | null;
   fige: boolean;
   zone?: string;
   enAttente: boolean;
@@ -654,7 +721,8 @@ const LigneProduit = memo(function LigneProduit({
 }) {
   const compte = etat.stock !== null;
   const u = ligne.unite ?? "u";
-  const tendu = estTendu(ligne, etat);
+  const comptage = ligne.comptePour !== null;
+  const tendu = !comptage && estTendu(ligne, { ...etat, stock: stockTotal });
   const actif = frappe !== null;
 
   return (
@@ -684,11 +752,23 @@ const LigneProduit = memo(function LigneProduit({
           {ligne.nom}
         </span>
         <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-neutre-500">
-          <span>
-            {ligne.stockPrecedent !== null
-              ? `dernier ${qte(ligne.stockPrecedent)} ${u}`
-              : (ligne.conditionnement ?? `${qte(ligne.fact)} ${u}/colis`)}
-          </span>
+          {comptage ? (
+            <span>
+              comptage seul · 1 = {qte(ligne.equivalence ?? 1)}{" "}
+              {ligne.nomRattache ? `« ${ligne.nomRattache} »` : ""}
+            </span>
+          ) : (
+            <span>
+              {ligne.stockPrecedent !== null
+                ? `dernier ${qte(ligne.stockPrecedent)} ${u}`
+                : (ligne.conditionnement ?? `${qte(ligne.fact)} ${u}/colis`)}
+            </span>
+          )}
+          {!comptage && stockTotal !== null && stockTotal !== etat.stock ? (
+            <span className="font-semibold text-neutre-700">
+              total {qte(stockTotal)} {u}
+            </span>
+          ) : null}
           {etat.perte ? (
             <span className="font-semibold text-ambre-700">jeté {qte(etat.perte)}</span>
           ) : null}
@@ -746,7 +826,7 @@ const LigneProduit = memo(function LigneProduit({
               : "border-neutre-100 text-neutre-300"
         }`}
       >
-        {colis > 0 || etat.force ? colis : "·"}
+        {comptage ? "—" : colis > 0 || etat.force ? colis : "·"}
       </button>
     </li>
   );
@@ -762,6 +842,7 @@ function Fiche({
   etat,
   colis,
   proposition,
+  stockTotal,
   zone,
   fige,
   enAttente,
@@ -774,6 +855,7 @@ function Fiche({
   etat: Etat;
   colis: number;
   proposition: number | null;
+  stockTotal: number | null;
   zone?: string;
   fige: boolean;
   enAttente: boolean;
@@ -842,6 +924,24 @@ function Fiche({
             </span>
           </button>
 
+          {ligne.comptePour === null && stockTotal !== null && stockTotal !== etat.stock ? (
+            <p className="rounded-xl bg-neutre-50 px-4 py-2.5 text-sm text-neutre-700">
+              Avec les lignes de comptage rattachées :{" "}
+              <span className="font-semibold">
+                {qte(stockTotal)} {u}
+              </span>{" "}
+              en tout. C’est ce total qui sert au calcul.
+            </p>
+          ) : null}
+
+          {ligne.comptePour !== null ? (
+            <p className="rounded-2xl border border-neutre-100 p-4 text-sm leading-relaxed text-neutre-600">
+              Ligne de comptage seulement : elle ne se commande pas. Chaque {u}{" "}
+              compté ici vaut {qte(ligne.equivalence ?? 1)} sur la ligne
+              {ligne.nomRattache ? ` « ${ligne.nomRattache} »` : " principale"}, qui
+              calcule et commande pour les deux.
+            </p>
+          ) : (
           <div className="rounded-2xl border border-neutre-100 p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -886,7 +986,7 @@ function Fiche({
                 </p>
               ) : null}
             </div>
-            {estTendu(ligne, etat) ? (
+            {estTendu(ligne, { ...etat, stock: stockTotal }) ? (
               <p className="mt-2 rounded-lg bg-rouge-50 px-3 py-2 text-xs text-rouge-700">
                 <span className="font-semibold">Stock tendu</span> : moins de la moitié du
                 besoin estimé d’ici la prochaine livraison.
@@ -903,6 +1003,7 @@ function Fiche({
               </button>
             ) : null}
           </div>
+          )}
 
           <button
             onClick={onPerte}

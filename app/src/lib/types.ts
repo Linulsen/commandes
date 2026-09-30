@@ -26,6 +26,13 @@ export type Produit = {
   fact: number;
   actif: boolean;
   ordre: number;
+  /**
+   * Ligne de comptage seulement : le produit que ce stock complète. Elle n'est
+   * jamais commandée ; son stock, multiplié par `equivalence`, s'ajoute à
+   * celui du produit principal.
+   */
+  compte_pour?: number | null;
+  equivalence?: number | null;
 };
 
 export type Session = {

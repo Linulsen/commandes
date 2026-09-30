@@ -49,6 +49,14 @@ export default async function Commande({
           conditionnement: l.produit.conditionnement,
           unite: l.produit.unite,
           fact: Number(l.produit.fact),
+          comptePour: l.produit.compte_pour ?? null,
+          equivalence:
+            l.produit.equivalence == null ? null : Number(l.produit.equivalence),
+          nomRattache:
+            l.produit.compte_pour == null
+              ? null
+              : (commande.lignes.find((m) => m.produit.id === l.produit.compte_pour)
+                  ?.produit.nom ?? null),
           stock: l.ligne.stock === null ? null : Number(l.ligne.stock),
           colis: l.ligne.colis === null ? null : Number(l.ligne.colis),
           perte: l.ligne.perte === null ? null : Number(l.ligne.perte),

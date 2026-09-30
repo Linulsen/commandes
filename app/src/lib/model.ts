@@ -28,7 +28,16 @@ export type LigneEnrichie = {
   stockPrecedent: number | null;
   /** Les quatre derniers relevés, du plus récent au plus ancien. */
   releves: ReleveResume[];
+  /**
+   * Stock qui sert au calcul : celui de la ligne, plus celui des lignes de
+   * comptage qui lui sont rattachées (converti). Égal à `ligne.stock` sinon.
+   */
+  stockTotal: number | null;
 };
+
+/** Une ligne de comptage complète un autre produit et ne se commande jamais. */
+export const estLigneDeComptage = (p: Pick<Produit, "compte_pour">) =>
+  p.compte_pour !== null && p.compte_pour !== undefined;
 
 /**
  * Quantité qui fait foi pour une ligne : celle que Nicolas a arrêtée, sinon la
@@ -37,8 +46,9 @@ export type LigneEnrichie = {
  * s'affiche à l'écran.
  */
 export function quantiteRetenue(l: LigneEnrichie): number {
+  if (estLigneDeComptage(l.produit)) return 0;
   if (l.ligne.colis !== null) return Number(l.ligne.colis);
-  return l.ligne.stock !== null ? l.suggestion : 0;
+  return l.stockTotal !== null ? l.suggestion : 0;
 }
 
 export async function getFournisseurs() {
@@ -100,6 +110,16 @@ export async function getCommande(sessionId: number) {
   const { session, zones } = paquet;
   const zoneParId = new Map(zones.map((z) => [z.id, z]));
 
+  // Ce que les lignes de comptage ajoutent au stock de leur produit principal
+  // (ex. sucrines en sachet de 6, comptées en sachets de 3).
+  const rattache = new Map<number, number>();
+  for (const brut of paquet.lignes) {
+    const p = brut.produit;
+    if (!estLigneDeComptage(p) || brut.ligne.stock == null) continue;
+    const ajout = Number(brut.ligne.stock) * Number(p.equivalence ?? 1);
+    rattache.set(p.compte_pour!, (rattache.get(p.compte_pour!) ?? 0) + ajout);
+  }
+
   const lignes: LigneEnrichie[] = paquet.lignes.map((brut) => {
     const produit = brut.produit;
     const prevision = prevoir(
@@ -121,21 +141,30 @@ export async function getCommande(sessionId: number) {
       perte: brut.ligne.perte ?? null,
       maj_le: brut.ligne.maj_le ?? null,
     };
+    const ajout = rattache.get(produit.id);
+    const stockTotal =
+      ligne.stock === null && ajout === undefined
+        ? null
+        : Number(ligne.stock ?? 0) + (ajout ?? 0);
+    const comptage = estLigneDeComptage(produit);
     return {
       ligne,
       produit,
       zone: zoneParId.get(produit.zone_id)!,
       prevision,
-      suggestion: suggerer(
-        prevision.consoPrevue,
-        ligne.stock,
-        Number(produit.fact),
-        Number(session.marge),
-      ),
-      alerte: alerte(prevision, ligne.stock),
-      couverture: couverture(prevision, ligne.stock),
+      suggestion: comptage
+        ? 0
+        : suggerer(
+            prevision.consoPrevue,
+            stockTotal,
+            Number(produit.fact),
+            Number(session.marge),
+          ),
+      alerte: comptage ? null : alerte(prevision, stockTotal),
+      couverture: comptage ? null : couverture(prevision, stockTotal),
       stockPrecedent: brut.stockPrecedent,
       releves: brut.releves ?? [],
+      stockTotal,
     };
   });
 
