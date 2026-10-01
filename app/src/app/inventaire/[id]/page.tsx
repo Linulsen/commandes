@@ -17,7 +17,7 @@ export default async function PageInventaire({
   const chargeLe = new Date().toISOString();
   const [donnees, appareil] = await Promise.all([getInventaire(id), appareilCourant()]);
   if (!donnees) notFound();
-  const { inventaire, lieux, lignes } = donnees;
+  const { inventaire, lieux, lignes, catalogue } = donnees;
   const fige = inventaire.statut === "cloture";
 
   return (
@@ -27,6 +27,7 @@ export default async function PageInventaire({
         fige={fige}
         lieux={lieux}
         lignes={lignes}
+        catalogue={catalogue}
         chargeLe={chargeLe}
         prenom={appareil?.prenom ?? null}
         sousTitre={[

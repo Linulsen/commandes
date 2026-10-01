@@ -51,6 +51,19 @@ export type LigneInventaire = {
   majLe: number;
 };
 
+export type ProduitCatalogue = {
+  produitId: number;
+  nom: string;
+  conditionnement: string | null;
+  unite: string | null;
+  fact: number;
+  contenance: number | null;
+  uniteContenance: "kg" | "L" | null;
+  saisieDetail: boolean;
+  inactif: boolean;
+  lieuPrincipal: number;
+};
+
 export type SaisieServeur = {
   produit_id: number;
   zone_id: number;
@@ -202,16 +215,12 @@ export async function getInventaire(id: number) {
     ),
   ]);
 
-  const ids = [...new Set([...attendus.map((a) => a.produit_id), ...saisies.map((s) => s.produit_id)])];
-  const produits = new Map<number, ProduitInv>();
-  for (let i = 0; i < ids.length; i += 300) {
-    const { data, error: e } = await db()
-      .from("cmd_produits")
-      .select(COLONNES_PRODUIT)
-      .in("id", ids.slice(i, i + 300));
-    if (e) throw new Error(e.message);
-    for (const p of (data ?? []) as ProduitInv[]) produits.set(p.id, p);
-  }
+  // Tout le catalogue, y compris les produits retirés de la carte et hors
+  // commande : on peut en trouver dans un lieu où on ne les attendait pas.
+  const tous = await selectAll<ProduitInv>(() =>
+    db().from("cmd_produits").select(COLONNES_PRODUIT).order("id"),
+  );
+  const produits = new Map(tous.map((p) => [p.id, p]));
 
   const lieux: Lieu[] = zones.map((z) => ({
     id: z.id,
@@ -264,7 +273,54 @@ export async function getInventaire(id: number) {
   const lignes = [...parCle.values()].sort((a, b) =>
     a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" }),
   );
-  return { inventaire, lieux, lignes };
+  const catalogue: ProduitCatalogue[] = tous
+    .map((p) => ({
+      produitId: p.id,
+      nom: p.nom,
+      conditionnement: p.conditionnement,
+      unite: p.unite,
+      fact: Number(p.fact),
+      contenance: num(p.contenance),
+      uniteContenance: p.unite_contenance,
+      saisieDetail: p.saisie_detail,
+      inactif: !p.actif,
+      lieuPrincipal: p.lieu_id ?? p.zone_id,
+    }))
+    .sort((a, b) => a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" }));
+  return { inventaire, lieux, lignes, catalogue };
+}
+
+/**
+ * Range un produit dans un lieu pour les prochains inventaires (emplacement
+ * secondaire), quand on l'y a trouvé sans qu'il y soit attendu.
+ */
+export async function ajouterEmplacement(
+  produitId: number,
+  zoneId: number,
+  qui: { prenom: string | null; appareilId: string | null },
+) {
+  const { data: p, error: e1 } = await db()
+    .from("cmd_produits")
+    .select("id,zone_id,lieu_id")
+    .eq("id", produitId)
+    .maybeSingle();
+  if (e1) throw new Error(e1.message);
+  if (!p) return "produit inconnu";
+  const principal = (p as { lieu_id: number | null; zone_id: number }).lieu_id ?? (p as { zone_id: number }).zone_id;
+  if (principal === zoneId) return "ok";
+  const { error } = await db()
+    .from("cmd_produit_emplacements")
+    .upsert({ produit_id: produitId, zone_id: zoneId }, { onConflict: "produit_id,zone_id", ignoreDuplicates: true });
+  if (error) throw new Error(error.message);
+  await db().from("app_journal").insert({
+    action: "emplacement_ajoute",
+    objet: "produit",
+    objet_id: String(produitId),
+    details: { zone_id: zoneId },
+    prenom: qui.prenom,
+    appareil_id: qui.appareilId,
+  });
+  return "ok";
 }
 
 /** Saisies modifiées depuis un instant donné (pour voir celles des collègues). */

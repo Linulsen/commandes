@@ -5,7 +5,7 @@ import Link from "next/link";
 import { normaliser, qte } from "@/lib/format";
 import { lireNombre, mettreEnFile, saisiesLocales, useFileAttente } from "@/lib/file-attente";
 import { useEcranAllume } from "@/lib/ecran";
-import type { Lieu, LigneInventaire, SaisieServeur } from "@/lib/inventaire";
+import type { Lieu, LigneInventaire, ProduitCatalogue, SaisieServeur } from "@/lib/inventaire";
 import EtatEnvoi from "../../EtatEnvoi";
 import Pave, { frapper, montrerLigne, type Frappe, type Raccourci } from "../../Pave";
 
@@ -73,7 +73,8 @@ export default function Comptage({
   inventaireId,
   fige,
   lieux,
-  lignes,
+  lignes: lignesInitiales,
+  catalogue,
   chargeLe,
   prenom,
   sousTitre,
@@ -82,6 +83,8 @@ export default function Comptage({
   fige: boolean;
   lieux: Lieu[];
   lignes: LigneInventaire[];
+  /** Tout le catalogue, retirés compris : pour ajouter un article à un lieu. */
+  catalogue: ProduitCatalogue[];
   /** Heure du serveur au chargement : point de départ des nouvelles des collègues. */
   chargeLe: string;
   prenom: string | null;
@@ -91,6 +94,17 @@ export default function Comptage({
   const envoi = useFileAttente();
   useEcranAllume(!fige);
 
+  // Articles ajoutés à un lieu pendant cette visite (trouvés là sans y être attendus).
+  const [ajoutees, setAjoutees] = useState<LigneInventaire[]>([]);
+  const lignes = useMemo(
+    () =>
+      ajoutees.length
+        ? [...lignesInitiales, ...ajoutees].sort((a, b) =>
+            a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" }),
+          )
+        : lignesInitiales,
+    [ajoutees, lignesInitiales],
+  );
   const avecLignes = useMemo(
     () => lieux.filter((z) => lignes.some((l) => l.zoneId === z.id)),
     [lieux, lignes],
@@ -98,6 +112,9 @@ export default function Comptage({
   const [onglet, setOnglet] = useState<number>(avecLignes[0]?.id ?? lieux[0]?.id ?? 0);
   // Recherche toujours visible dans le bandeau, sur tous les lieux.
   const [recherche, setRecherche] = useState("");
+  // Par défaut la recherche reste dans le lieu ouvert : c'est là qu'on ajoute
+  // un article trouvé sur place. La case l'étend à tous les lieux.
+  const [tousLieux, setTousLieux] = useState(false);
 
   const parCle = useMemo(() => new Map(lignes.map((l) => [cleDe(l), l])), [lignes]);
   const etatInitial = (l: LigneInventaire): Etat => ({
@@ -261,9 +278,61 @@ export default function Comptage({
   }, [cible, hauteurPave]);
 
   const terme = normaliser(recherche.trim());
-  const visibles = terme
-    ? lignes.filter((l) => normaliser(l.nom).includes(terme))
-    : lignes.filter((l) => l.zoneId === onglet);
+  const visibles = lignes.filter(
+    (l) =>
+      (terme && tousLieux ? true : l.zoneId === onglet) &&
+      (!terme || normaliser(l.nom).includes(terme)),
+  );
+  const nomLieuOuvert = lieux.find((z) => z.id === onglet)?.nom ?? "ce lieu";
+  const dejaIci = new Set(lignes.filter((l) => l.zoneId === onglet).map((l) => l.produitId));
+  const aAjouter =
+    !fige && terme.length >= 2 && !tousLieux
+      ? catalogue
+          .filter((p) => !dejaIci.has(p.produitId) && normaliser(p.nom).includes(terme))
+          .slice(0, 15)
+      : [];
+
+  // Ajout d'un article au lieu ouvert : il rejoint la liste, et le pavé s'ouvre
+  // dessus. S'il n'est pas rangé ici d'habitude, ce lieu devient un de ses
+  // emplacements pour les prochains inventaires.
+  const [aOuvrir, setAOuvrir] = useState<string | null>(null);
+  const ajouterIci = (p: ProduitCatalogue) => {
+    const ligne: LigneInventaire = {
+      produitId: p.produitId,
+      zoneId: onglet,
+      nom: p.nom,
+      conditionnement: p.conditionnement,
+      unite: p.unite,
+      fact: p.fact,
+      contenance: p.contenance,
+      uniteContenance: p.uniteContenance,
+      saisieDetail: p.saisieDetail,
+      principal: p.lieuPrincipal === onglet,
+      inactif: p.inactif,
+      colis: null,
+      unites: null,
+      detail: null,
+      total: null,
+      prenom: null,
+      majLe: 0,
+    };
+    setAjoutees((a) => [...a, ligne]);
+    setRecherche("");
+    setAOuvrir(cleDe(ligne));
+    if (!ligne.principal) {
+      void fetch("/api/inventaire/emplacements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ produitId: p.produitId, zoneId: onglet }),
+      }).catch(() => null);
+    }
+  };
+  useEffect(() => {
+    if (!aOuvrir || !parCle.has(aOuvrir)) return;
+    const l = parCle.get(aOuvrir)!;
+    setAOuvrir(null);
+    ouvrir(aOuvrir, champsDe(l)[0]);
+  }, [aOuvrir, parCle, ouvrir]);
   const nomLieu = useMemo(() => new Map(lieux.map((z) => [z.id, z.nom])), [lieux]);
 
   /** Case suivante du même produit, puis premier champ du produit suivant. */
@@ -361,11 +430,20 @@ export default function Comptage({
             value={recherche}
             onChange={(e) => setRecherche(e.target.value)}
             onFocus={() => setCible(null)}
-            placeholder="Chercher un produit, tous lieux"
+            placeholder={tousLieux ? "Chercher dans tous les lieux" : `Chercher ou ajouter · ${nomLieuOuvert}`}
             enterKeyHint="search"
-            aria-label="Chercher un produit dans tous les lieux"
+            aria-label="Chercher un produit"
             className="mt-2 min-h-11 w-full rounded-xl border border-rouge-800 bg-rouge-800 px-3 text-base text-white placeholder:text-rouge-200 outline-none focus:border-white"
           />
+          <label className="mt-1.5 flex min-h-9 w-fit items-center gap-2 text-sm text-rouge-50">
+            <input
+              type="checkbox"
+              checked={tousLieux}
+              onChange={(e) => setTousLieux(e.target.checked)}
+              className="h-5 w-5 accent-white"
+            />
+            Tous les lieux
+          </label>
         </div>
       </header>
       <nav
@@ -378,7 +456,7 @@ export default function Comptage({
               const dedans = lignes.filter((l) => l.zoneId === z.id);
               const n = dedans.filter((l) => totalDe(l, etatDe(l)) !== null).length;
               const fini = n === dedans.length && dedans.length > 0;
-              const actif = onglet === z.id && !terme;
+              const actif = onglet === z.id && !(terme && tousLieux);
               return (
                 <button
                   key={z.id}
@@ -422,8 +500,10 @@ export default function Comptage({
         {visibles.length === 0 ? (
           <p className="rounded-2xl border border-neutre-100 bg-white p-4 text-sm text-neutre-500">
             {terme
-              ? "Aucun produit ne porte ce nom."
-              : "Aucun produit rattaché à ce lieu pour l’instant."}
+              ? tousLieux
+                ? "Aucun produit ne porte ce nom."
+                : `Rien de ce nom dans ${nomLieuOuvert} pour l’instant.`
+              : "Aucun produit rattaché à ce lieu pour l’instant. Cherchez un article dans le champ en haut pour l’ajouter."}
           </p>
         ) : (
           <ul className="overflow-hidden rounded-2xl border border-neutre-100 bg-white shadow-sm">
@@ -435,7 +515,7 @@ export default function Comptage({
                   ligne={l}
                   etat={etatDe(l)}
                   fige={fige}
-                  lieu={terme ? nomLieu.get(l.zoneId) : undefined}
+                  lieu={terme && tousLieux ? nomLieu.get(l.zoneId) : undefined}
                   moi={prenom}
                   enAttente={envoi.cles.has(prefixe + cle)}
                   cible={cible?.cle === cle ? cible.champ : null}
@@ -446,6 +526,41 @@ export default function Comptage({
             })}
           </ul>
         )}
+
+        {aAjouter.length ? (
+          <section className="mt-3">
+            <h2 className="mb-1.5 px-1 font-titre text-xs font-bold uppercase tracking-[0.14em] text-neutre-500">
+              Ajouter à {nomLieuOuvert}
+            </h2>
+            <ul className="overflow-hidden rounded-2xl border border-neutre-100 bg-white shadow-sm">
+              {aAjouter.map((p) => (
+                <li key={p.produitId} className="border-b border-neutre-100 last:border-b-0">
+                  <button
+                    onClick={() => ajouterIci(p)}
+                    className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="line-clamp-2 font-titre text-[15px] font-semibold leading-snug">
+                        {p.nom}
+                      </span>
+                      <span className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-neutre-500">
+                        <span>d’habitude : {nomLieu.get(p.lieuPrincipal) ?? "—"}</span>
+                        {p.inactif ? (
+                          <span className="rounded-full bg-neutre-100 px-1.5 text-[11px] font-semibold text-neutre-600">
+                            retiré de la carte
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                    <span className="shrink-0 rounded-full bg-rouge-700 px-3 py-1.5 text-sm font-semibold text-white">
+                      Ajouter
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {!terme && lieuSuivant ? (
           <button
