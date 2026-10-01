@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import Entete from "../../Entete";
 import { getInventaire } from "@/lib/inventaire";
 import { appareilCourant } from "@/lib/appareil";
 import { dateLongue } from "@/lib/format";
@@ -23,18 +22,6 @@ export default async function PageInventaire({
 
   return (
     <main>
-      <div className="sans-impression">
-        <Entete
-          titre="Inventaire"
-          sousTitre={[
-            dateLongue(inventaire.date_inventaire),
-            fige ? "clôturé" : inventaire.cree_par ? `démarré par ${inventaire.cree_par}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-          retour={{ href: "/", libelle: "Accueil" }}
-        />
-      </div>
       <Comptage
         inventaireId={inventaire.id}
         fige={fige}
@@ -42,6 +29,15 @@ export default async function PageInventaire({
         lignes={lignes}
         chargeLe={chargeLe}
         prenom={appareil?.prenom ?? null}
+        sousTitre={[
+          dateLongue(inventaire.date_inventaire),
+          inventaire.heure_inventaire
+            ? inventaire.heure_inventaire.slice(0, 5).replace(":", " h ")
+            : null,
+          fige ? "clôturé" : inventaire.cree_par ? `démarré par ${inventaire.cree_par}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       />
     </main>
   );

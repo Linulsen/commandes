@@ -18,7 +18,13 @@ export default async function Accueil() {
     // L'inventaire ne doit jamais empêcher l'accueil des commandes de s'afficher.
     getResumeInventaire().catch(() => null),
   ]);
-  const aujourdhui = new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(new Date());
+  const maintenant = new Date();
+  const aujourdhui = new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(maintenant);
+  const heure = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(maintenant);
   const aReceptionner = receptions.aReceptionner.length;
   // Les relevés en cours sont mis en cache dès l'accueil : si le réseau lâche
   // avant d'avoir ouvert la page, elle s'ouvrira quand même.
@@ -170,6 +176,9 @@ export default async function Accueil() {
                   </span>
                   <span className="mt-0.5 block text-sm text-rouge-50">
                     du {dateMoyenne(inventaire.enCours.date_inventaire)}
+                    {inventaire.enCours.heure_inventaire
+                      ? ` à ${inventaire.enCours.heure_inventaire.slice(0, 5).replace(":", " h ")}`
+                      : ""}
                   </span>
                 </span>
                 <span className="shrink-0 rounded-full bg-rouge-800 px-2.5 py-1 text-sm tabular-nums">
@@ -190,14 +199,24 @@ export default async function Accueil() {
                     les collègues le rejoignent depuis leur téléphone
                   </span>
                 </button>
-                <input
-                  type="date"
-                  name="date"
-                  required
-                  defaultValue={aujourdhui}
-                  aria-label="Date de l’inventaire"
-                  className="min-h-11 shrink-0 rounded-xl border border-neutre-200 bg-white px-2 text-sm"
-                />
+                <div className="flex shrink-0 flex-col gap-1">
+                  <input
+                    type="date"
+                    name="date"
+                    required
+                    defaultValue={aujourdhui}
+                    aria-label="Date de l’inventaire"
+                    className="min-h-11 rounded-xl border border-neutre-200 bg-white px-2 text-sm"
+                  />
+                  <input
+                    type="time"
+                    name="heure"
+                    required
+                    defaultValue={heure}
+                    aria-label="Heure de l’inventaire"
+                    className="min-h-11 rounded-xl border border-neutre-200 bg-white px-2 text-sm"
+                  />
+                </div>
               </form>
             )}
           </section>

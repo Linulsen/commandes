@@ -18,6 +18,7 @@ const db = () => sb() as unknown as SupabaseClient;
 export type Inventaire = {
   id: number;
   date_inventaire: string;
+  heure_inventaire: string | null;
   libelle: string | null;
   statut: "en_cours" | "cloture";
   cree_le: string;
@@ -117,6 +118,7 @@ export async function getDernierInventaireCloture(): Promise<Inventaire | null> 
 /** Démarre un inventaire, ou rend celui déjà en cours (un seul à la fois). */
 export async function demarrerInventaire(
   date: string,
+  heure: string | null,
   prenom: string | null,
   appareilId: string | null,
 ): Promise<Inventaire> {
@@ -124,7 +126,7 @@ export async function demarrerInventaire(
   if (enCours) return enCours;
   const { data, error } = await db()
     .from("inv_inventaires")
-    .insert({ date_inventaire: date, cree_par: prenom })
+    .insert({ date_inventaire: date, heure_inventaire: heure, cree_par: prenom })
     .select("*")
     .single();
   if (error) {
@@ -139,7 +141,7 @@ export async function demarrerInventaire(
     action: "inventaire_demarre",
     objet: "inventaire",
     objet_id: String(inv.id),
-    details: { date },
+    details: { date, heure },
     prenom,
     appareil_id: appareilId,
   });

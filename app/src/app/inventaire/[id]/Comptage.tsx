@@ -76,6 +76,7 @@ export default function Comptage({
   lignes,
   chargeLe,
   prenom,
+  sousTitre,
 }: {
   inventaireId: number;
   fige: boolean;
@@ -84,6 +85,8 @@ export default function Comptage({
   /** Heure du serveur au chargement : point de départ des nouvelles des collègues. */
   chargeLe: string;
   prenom: string | null;
+  /** Date, heure et état de l'inventaire, sous le titre. */
+  sousTitre: string;
 }) {
   const envoi = useFileAttente();
   useEcranAllume(!fige);
@@ -93,7 +96,8 @@ export default function Comptage({
     [lieux, lignes],
   );
   const [onglet, setOnglet] = useState<number>(avecLignes[0]?.id ?? lieux[0]?.id ?? 0);
-  const [recherche, setRecherche] = useState<string | null>(null);
+  // Recherche toujours visible dans le bandeau, sur tous les lieux.
+  const [recherche, setRecherche] = useState("");
 
   const parCle = useMemo(() => new Map(lignes.map((l) => [cleDe(l), l])), [lignes]);
   const etatInitial = (l: LigneInventaire): Etat => ({
@@ -256,7 +260,7 @@ export default function Comptage({
     );
   }, [cible, hauteurPave]);
 
-  const terme = recherche ? normaliser(recherche.trim()) : "";
+  const terme = normaliser(recherche.trim());
   const visibles = terme
     ? lignes.filter((l) => normaliser(l.nom).includes(terme))
     : lignes.filter((l) => l.zoneId === onglet);
@@ -304,7 +308,7 @@ export default function Comptage({
 
   const changerOnglet = (id: number) => {
     setOnglet(id);
-    setRecherche(null);
+    setRecherche("");
     setCible(null);
     const haut = (nav.current?.offsetTop ?? 0) - 1;
     if (window.scrollY > haut) window.scrollTo({ top: Math.max(0, haut) });
@@ -332,26 +336,44 @@ export default function Comptage({
 
   return (
     <>
+      <header className="sans-impression bg-rouge-700 text-white">
+        <div
+          className="mx-auto max-w-2xl px-4 pb-3"
+          style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Link
+              href="/"
+              className="-ml-2 flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 text-sm text-rouge-50"
+            >
+              <span aria-hidden="true">←</span>
+              Accueil
+            </Link>
+            <div className="min-w-0 text-right">
+              <h1 className="font-titre text-2xl font-semibold leading-tight tracking-tight">
+                Inventaire
+              </h1>
+              <p className="truncate text-xs text-rouge-50">{sousTitre}</p>
+            </div>
+          </div>
+          <input
+            type="search"
+            value={recherche}
+            onChange={(e) => setRecherche(e.target.value)}
+            onFocus={() => setCible(null)}
+            placeholder="Chercher un produit, tous lieux"
+            enterKeyHint="search"
+            aria-label="Chercher un produit dans tous les lieux"
+            className="mt-2 min-h-11 w-full rounded-xl border border-rouge-800 bg-rouge-800 px-3 text-base text-white placeholder:text-rouge-200 outline-none focus:border-white"
+          />
+        </div>
+      </header>
       <nav
         ref={nav}
         className="sans-impression sticky top-0 z-10 border-b border-neutre-100 bg-neutre-50/95 backdrop-blur"
       >
         <div ref={barre} className="defile-x mx-auto max-w-2xl px-4 py-2">
           <div className="flex gap-2">
-            <button
-              onClick={() => {
-                setRecherche((r) => (r === null ? "" : null));
-                setCible(null);
-              }}
-              aria-label="Chercher un produit"
-              className={`flex min-h-11 shrink-0 items-center rounded-full px-3.5 text-sm font-semibold ${
-                recherche !== null
-                  ? "bg-neutre-900 text-white"
-                  : "border border-neutre-100 bg-white text-neutre-700"
-              }`}
-            >
-              Chercher
-            </button>
             {lieux.map((z) => {
               const dedans = lignes.filter((l) => l.zoneId === z.id);
               const n = dedans.filter((l) => totalDe(l, etatDe(l)) !== null).length;
@@ -387,20 +409,6 @@ export default function Comptage({
             })}
           </div>
         </div>
-        {recherche !== null ? (
-          <div className="mx-auto max-w-2xl px-4 pb-2">
-            <input
-              type="search"
-              autoFocus
-              value={recherche}
-              onChange={(e) => setRecherche(e.target.value)}
-              onFocus={() => setCible(null)}
-              placeholder="Nom du produit, tous lieux"
-              enterKeyHint="search"
-              className="min-h-11 w-full rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700"
-            />
-          </div>
-        ) : null}
       </nav>
 
       <div
