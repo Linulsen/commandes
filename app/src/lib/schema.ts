@@ -10,6 +10,27 @@ import type {
   Zone,
 } from "./types";
 
+type AppareilEnregistre = {
+  id: string;
+  nom: string;
+  type: string | null;
+  prenom: string | null;
+  premiere_connexion: string;
+  derniere_connexion: string;
+  deconnecte_le: string | null;
+};
+
+type EntreeJournal = {
+  id: number;
+  quand: string;
+  action: string;
+  objet: string;
+  objet_id: string | null;
+  details: Record<string, unknown> | null;
+  prenom: string | null;
+  appareil_id: string | null;
+};
+
 /**
  * Description des seules tables `cmd_` utilisées ici. La base héberge aussi les
  * référentiels d'études du cabinet : les décrire n'apporterait rien et rendrait
@@ -40,6 +61,14 @@ export type Database = {
       cmd_reception_lignes: Table<
         ReceptionLigne,
         Partial<ReceptionLigne> & { reception_id: number; produit_id: number }
+      >;
+      app_appareils: Table<
+        AppareilEnregistre,
+        Partial<AppareilEnregistre> & { id: string; nom: string }
+      >;
+      app_journal: Table<
+        EntreeJournal,
+        Partial<Omit<EntreeJournal, "id">> & { action: string; objet: string }
       >;
     };
     Views: {

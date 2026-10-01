@@ -5,11 +5,16 @@ import Precharger from "./Precharger";
 import Installer from "./Installer";
 import BarreNav from "./BarreNav";
 import { dateMoyenne } from "@/lib/format";
+import { appareilCourant } from "@/lib/appareil";
 
 export const dynamic = "force-dynamic";
 
 export default async function Accueil() {
-  const [resumes, receptions] = await Promise.all([getAccueil(), getReceptionsAccueil()]);
+  const [resumes, receptions, appareil] = await Promise.all([
+    getAccueil(),
+    getReceptionsAccueil(),
+    appareilCourant(),
+  ]);
   const aReceptionner = receptions.aReceptionner.length;
   // Les relevés en cours sont mis en cache dès l'accueil : si le réseau lâche
   // avant d'avoir ouvert la page, elle s'ouvrira quand même.
@@ -27,6 +32,19 @@ export default async function Accueil() {
 
       <div className="mx-auto max-w-2xl space-y-3 px-4 py-4">
         <Installer />
+        {appareil?.prenom ? (
+          <Link
+            href="/appareil?suite=/"
+            className="flex min-h-11 items-center justify-between gap-3 rounded-xl px-1 text-sm text-neutre-500"
+          >
+            <span>
+              Connecté : <span className="font-semibold text-neutre-700">{appareil.prenom}</span>
+            </span>
+            <span className="text-rouge-700 underline decoration-rouge-200 underline-offset-4">
+              Changer
+            </span>
+          </Link>
+        ) : null}
         {resumes.map(
           ({ fournisseur, nbProduits, derniereValidee, brouillon, prochaineDate, prochainLibelle }) => (
             <section

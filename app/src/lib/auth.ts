@@ -44,3 +44,13 @@ export async function jetonValide(jeton: string | undefined): Promise<boolean> {
 
 export const COOKIE_NOM = COOKIE;
 export const COOKIE_DUREE = DUREE_JOURS * 86400;
+
+/**
+ * Identité de l'appareil : un identifiant créé à la première connexion, gardé
+ * bien plus longtemps que la session (un appareil reste le même quand le code
+ * est redemandé). Le prénom de la personne qui l'utilise est à part : sur une
+ * tablette partagée, il change sans que l'appareil change.
+ */
+export const COOKIE_APPAREIL = "praedic_appareil";
+export const COOKIE_PRENOM = "praedic_prenom";
+export const COOKIE_APPAREIL_DUREE = 400 * 86400;

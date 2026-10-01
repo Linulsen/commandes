@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { COOKIE_NOM, jetonValide } from "@/lib/auth";
+import { COOKIE_APPAREIL, COOKIE_NOM, jetonValide } from "@/lib/auth";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -7,6 +7,21 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
   if (await jetonValide(req.cookies.get(COOKIE_NOM)?.value)) {
+    // Un appareil connecté avant l'inventaire n'a jamais donné son nom ni le
+    // prénom de son utilisateur : on le lui demande une fois, à l'ouverture
+    // d'une page. Les envois en attente (routes d'API) passent toujours, pour
+    // ne perdre aucune saisie faite hors ligne.
+    if (
+      !req.cookies.get(COOKIE_APPAREIL)?.value &&
+      !pathname.startsWith("/api/") &&
+      pathname !== "/appareil"
+    ) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/appareil";
+      url.search = "";
+      url.searchParams.set("suite", pathname + req.nextUrl.search);
+      return NextResponse.redirect(url);
+    }
     return NextResponse.next();
   }
   if (pathname.startsWith("/api/")) {
