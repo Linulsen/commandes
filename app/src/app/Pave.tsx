@@ -21,7 +21,8 @@ export function frappeDe(valeur: number | null): Frappe {
   return { texte: valeur === null ? "" : qte(valeur), neuf: true };
 }
 
-export function frapper(f: Frappe, touche: string): Frappe {
+/** `decimales` : 2 par défaut ; 3 pour un poids au gramme (1,600 kg). */
+export function frapper(f: Frappe, touche: string, decimales = 2): Frappe {
   if (touche === "⌫") return { texte: f.neuf ? "" : f.texte.slice(0, -1), neuf: false };
   const base = f.neuf ? "" : f.texte;
   const texte =
@@ -32,7 +33,8 @@ export function frapper(f: Frappe, touche: string): Frappe {
       : base === "0"
         ? touche
         : base + touche;
-  if (lireNombre(texte) === undefined || /,\d{3}/.test(texte) || texte.length > 7) return f;
+  const trop = new RegExp(`,\\d{${decimales + 1}}`);
+  if (lireNombre(texte) === undefined || trop.test(texte) || texte.length > 7) return f;
   return { texte, neuf: false };
 }
 

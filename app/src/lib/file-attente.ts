@@ -22,7 +22,7 @@ import { useSyncExternalStore } from "react";
  * ligne remplace simplement la précédente.
  */
 
-export type Canal = "releve" | "reception";
+export type Canal = "releve" | "reception" | "inventaire";
 
 export type Entree = {
   /** Identifie la ligne : une seule entrée par ligne dans la file. */
@@ -38,6 +38,7 @@ const CLE_JOURNAL = "cmd:journal:v1";
 const URL_CANAL: Record<Canal, string> = {
   releve: "/api/lignes",
   reception: "/api/receptions/lignes",
+  inventaire: "/api/inventaire/saisies",
 };
 
 type Etat = {
