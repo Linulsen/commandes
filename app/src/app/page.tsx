@@ -138,7 +138,7 @@ export default async function Accueil() {
               Réceptions
             </span>
             <span className="mt-1 block text-sm text-neutre-500">
-              Livraisons à cocher, dépannages
+              Livraisons à cocher, dépannages, pertes
             </span>
           </span>
           {aReceptionner ? (

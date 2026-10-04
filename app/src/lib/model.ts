@@ -439,11 +439,19 @@ export async function ouvrirReception(sessionId: number) {
   return reception;
 }
 
-export async function creerDepannage(provenance: string | null) {
+/**
+ * Ouvre un mouvement hors commande : un dépannage (achat d'urgence, qui entre
+ * en stock) ou une perte (produit jeté, qui sort de la consommation). Pour une
+ * perte, `provenance` porte le motif (DLC dépassée…).
+ */
+export async function creerDepannage(
+  provenance: string | null,
+  type: "depannage" | "perte" = "depannage",
+) {
   const { data, error } = await sb()
     .from("cmd_receptions")
     .insert({
-      type: "depannage",
+      type,
       provenance,
       date_reception: new Date().toISOString().slice(0, 10),
     })
@@ -468,7 +476,7 @@ export type ProduitCatalogue = Pick<
 /**
  * Tout ce qu'il faut pour l'écran de réception : la réception, ses lignes, et
  * le catalogue dans lequel piocher un produit ajouté — celui du fournisseur
- * pour une livraison, tous les produits pour un dépannage.
+ * pour une livraison, tous les produits pour un dépannage ou une perte.
  */
 export async function getReception(id: number) {
   const { data, error } = await sb()

@@ -7,7 +7,8 @@ import { sb } from "@/lib/db";
  *
  * La quantité s'entend en colis pour une livraison — c'est ce qui est écrit sur
  * le bon — et en unités de stock pour un dépannage, acheté chez Metro dans un
- * conditionnement qui n'a rien à voir avec celui du fournisseur. `unites` est
+ * conditionnement qui n'a rien à voir avec celui du fournisseur (de même pour
+ * une perte : ce qui est jeté se compte comme au relevé). `unites` est
  * calculé ici, pour que la consommation n'ait qu'une colonne à lire.
  */
 type Brute = Record<string, unknown>;

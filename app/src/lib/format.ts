@@ -34,3 +34,9 @@ export function qte(n: number | null | undefined) {
 /** Pour chercher un produit sans se soucier des accents ni des majuscules. */
 export const normaliser = (s: string) =>
   s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+
+/** « Dépannage · Metro », « Perte · DLC dépassée » : le titre d'un mouvement hors commande. */
+export function libelleHorsCommande(r: { type: string; provenance: string | null }) {
+  const nom = r.type === "perte" ? "Perte" : "Dépannage";
+  return r.provenance ? `${nom} · ${r.provenance}` : nom;
+}

@@ -92,7 +92,8 @@ export type ReleveResume = {
 
 export type Reception = {
   id: number;
-  type: "livraison" | "depannage";
+  /** Livraison d'une commande ; dépannage (entrée hors commande) ; perte (produit jeté). */
+  type: "livraison" | "depannage" | "perte";
   session_id: number | null;
   fournisseur_id: number | null;
   date_reception: string;

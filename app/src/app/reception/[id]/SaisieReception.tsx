@@ -53,7 +53,9 @@ export default function SaisieReception({
   const router = useRouter();
   const envoi = useFileAttente();
   const fige = reception.statut === "validee";
-  const depannage = reception.type === "depannage";
+  // Dépannage et perte : hors commande, quantités en unités de stock.
+  const depannage = reception.type !== "livraison";
+  const perte = reception.type === "perte";
 
   const [etats, setEtats] = useState<Record<number, Etat>>(() =>
     Object.fromEntries(
@@ -246,7 +248,7 @@ export default function SaisieReception({
           <div className="flex items-end gap-3">
             <label className="min-w-0 flex-1">
               <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutre-500">
-                {depannage ? "Date du dépannage" : "Date de réception"}
+                {perte ? "Date de la perte" : depannage ? "Date du dépannage" : "Date de réception"}
               </span>
               <input
                 type="date"
@@ -262,12 +264,12 @@ export default function SaisieReception({
             {depannage ? (
               <label className="min-w-0 flex-1">
                 <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutre-500">
-                  Où
+                  {perte ? "Motif" : "Où"}
                 </span>
                 <input
                   value={provenance}
                   disabled={fige}
-                  placeholder="Metro…"
+                  placeholder={perte ? "DLC dépassée…" : "Metro…"}
                   onChange={(e) => setProvenance(e.target.value)}
                   onBlur={() => void majEntete({ provenance })}
                   className="mt-1 min-h-12 w-full rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700 disabled:bg-neutre-50"
@@ -277,8 +279,9 @@ export default function SaisieReception({
           </div>
           {depannage ? (
             <p className="mt-2 text-xs leading-relaxed text-neutre-500">
-              Quantités en unités de stock (kg, pièces…), comme au relevé. Le
-              dépannage compte dans la période où il a eu lieu.
+              {perte
+                ? "Quantités jetées, en unités de stock (kg, pièces…), comme au relevé. La perte compte dans la période où elle a eu lieu : elle n’est pas comptée comme consommée."
+                : "Quantités en unités de stock (kg, pièces…), comme au relevé. Le dépannage compte dans la période où il a eu lieu."}
             </p>
           ) : (
             <p className="mt-2 text-xs leading-relaxed text-neutre-500">
@@ -295,7 +298,13 @@ export default function SaisieReception({
               value={recherche}
               onChange={(e) => setRecherche(e.target.value)}
               onFocus={() => setCible(null)}
-              placeholder={depannage ? "Chercher le produit acheté" : "Chercher ou ajouter un produit"}
+              placeholder={
+                perte
+                  ? "Chercher le produit jeté"
+                  : depannage
+                    ? "Chercher le produit acheté"
+                    : "Chercher ou ajouter un produit"
+              }
               enterKeyHint="search"
               className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700"
             />
@@ -332,7 +341,9 @@ export default function SaisieReception({
             {terme
               ? "Aucun produit ne porte ce nom."
               : depannage
-                ? "Cherchez les produits achetés pour les ajouter."
+                ? perte
+                  ? "Cherchez les produits jetés pour les ajouter."
+                  : "Cherchez les produits achetés pour les ajouter."
                 : "Rien sur cette commande."}
           </p>
         ) : (
@@ -390,8 +401,9 @@ export default function SaisieReception({
         {fige ? (
           <div className="space-y-2">
             <p className="rounded-xl bg-vert-50 px-4 py-3 text-sm text-vert-800">
-              Réception validée. Les prochaines propositions de commande se
-              fondent sur ce qui a été reçu.
+              {perte
+                ? "Perte validée. Ces quantités ne sont pas comptées comme consommées dans les prochaines propositions de commande."
+                : "Réception validée. Les prochaines propositions de commande se fondent sur ce qui a été reçu."}
             </p>
             <button
               onClick={async () => {

@@ -3,14 +3,15 @@ import { creerDepannage, ouvrirReception } from "@/lib/model";
 
 /**
  * Ouvre une réception et y envoie l'utilisateur : celle d'une commande
- * (reprise si elle existe déjà), ou un dépannage.
+ * (reprise si elle existe déjà), un dépannage ou une perte.
  */
 export async function POST(req: Request) {
   const form = await req.formData();
   try {
-    if (form.get("type") === "depannage") {
+    const type = form.get("type");
+    if (type === "depannage" || type === "perte") {
       const provenance = String(form.get("provenance") ?? "").trim() || null;
-      const r = await creerDepannage(provenance);
+      const r = await creerDepannage(provenance, type);
       return NextResponse.redirect(new URL(`/reception/${r.id}`, req.url), 303);
     }
     const sessionId = Number(form.get("session"));

@@ -1,20 +1,23 @@
 import Link from "next/link";
 import Entete from "../Entete";
 import { getReceptionsAccueil } from "@/lib/model";
-import { dateMoyenne } from "@/lib/format";
+import { dateMoyenne, libelleHorsCommande } from "@/lib/format";
+import type { Reception } from "@/lib/types";
 import BarreNav from "../BarreNav";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Ce qui a été commandé et doit être réceptionné, et les dépannages. Deux
- * écrans complémentaires : le relevé dit ce qu'il faut commander, la réception
- * dit ce qui est vraiment arrivé.
+ * Ce qui a été commandé et doit être réceptionné, les dépannages et les
+ * pertes. Le relevé dit ce qu'il faut commander ; la réception dit ce qui est
+ * vraiment arrivé, le dépannage ce qui est entré hors commande, la perte ce
+ * qui est parti à la poubelle.
  */
 export default async function Receptions() {
   const { aReceptionner, enCours, recentes, fournisseurs } = await getReceptionsAccueil();
   const nom = new Map(fournisseurs.map((f) => [f.id, f.nom]));
   const depannagesEnCours = enCours.filter((r) => r.type === "depannage");
+  const pertesEnCours = enCours.filter((r) => r.type === "perte");
 
   return (
     <main style={{ paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}>
@@ -94,30 +97,35 @@ export default async function Receptions() {
               </button>
             </form>
           </div>
-          {depannagesEnCours.length ? (
-            <ul className="mt-2 overflow-hidden rounded-2xl border border-neutre-100 bg-white shadow-sm">
-              {depannagesEnCours.map((r) => (
-                <li key={r.id} className="border-b border-neutre-100 last:border-b-0">
-                  <Link
-                    href={`/reception/${r.id}`}
-                    className="flex min-h-14 items-center justify-between gap-3 px-4 py-3"
-                  >
-                    <span className="min-w-0">
-                      <span className="block font-titre text-sm font-semibold">
-                        Dépannage{r.provenance ? ` · ${r.provenance}` : ""}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-neutre-500">
-                        {dateMoyenne(r.date_reception)}
-                      </span>
-                    </span>
-                    <span className="shrink-0 rounded-full bg-ambre-50 px-2.5 py-1 text-xs font-semibold text-ambre-700">
-                      en cours
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <EnCours liste={depannagesEnCours} />
+        </section>
+
+        <section>
+          <h2 className="mb-1.5 px-1 font-titre text-xs font-bold uppercase tracking-[0.14em] text-neutre-500">
+            Perte
+          </h2>
+          <div className="rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
+            <p className="text-sm leading-relaxed text-neutre-700">
+              Un produit jeté — date dépassée, abîmé, renversé… Le déclarer
+              évite que la prévision le compte comme vendu, et qu’elle en fasse
+              commander davantage la fois suivante.
+            </p>
+            <form action="/api/receptions" method="post" className="mt-3 flex gap-2">
+              <input type="hidden" name="type" value="perte" />
+              <input
+                name="provenance"
+                placeholder="Motif ? (DLC…)"
+                className="min-h-12 min-w-0 flex-1 rounded-xl border-2 border-neutre-200 px-3 text-base outline-none focus:border-rouge-700"
+              />
+              <button
+                type="submit"
+                className="min-h-12 shrink-0 rounded-xl bg-rouge-700 px-4 font-titre text-sm font-semibold text-white"
+              >
+                Déclarer
+              </button>
+            </form>
+          </div>
+          <EnCours liste={pertesEnCours} />
         </section>
 
         {recentes.length ? (
@@ -134,12 +142,12 @@ export default async function Receptions() {
                   >
                     <span className="min-w-0">
                       <span className="block font-titre text-sm font-semibold">
-                        {r.type === "depannage"
-                          ? `Dépannage${r.provenance ? ` · ${r.provenance}` : ""}`
-                          : nom.get(r.fournisseur_id ?? 0)}
+                        {r.type === "livraison"
+                          ? nom.get(r.fournisseur_id ?? 0)
+                          : libelleHorsCommande(r)}
                       </span>
                       <span className="mt-0.5 block text-xs text-neutre-500">
-                        reçu le {dateMoyenne(r.date_reception)}
+                        {r.type === "perte" ? "jeté le" : "reçu le"} {dateMoyenne(r.date_reception)}
                       </span>
                     </span>
                     <span className="shrink-0 rounded-full bg-vert-100 px-2.5 py-1 text-xs font-semibold text-vert-800">
@@ -154,5 +162,34 @@ export default async function Receptions() {
       </div>
       <BarreNav actif="/receptions" />
     </main>
+  );
+}
+
+/** Dépannages ou pertes ouverts et pas encore validés. */
+function EnCours({ liste }: { liste: Reception[] }) {
+  if (!liste.length) return null;
+  return (
+    <ul className="mt-2 overflow-hidden rounded-2xl border border-neutre-100 bg-white shadow-sm">
+      {liste.map((r) => (
+        <li key={r.id} className="border-b border-neutre-100 last:border-b-0">
+          <Link
+            href={`/reception/${r.id}`}
+            className="flex min-h-14 items-center justify-between gap-3 px-4 py-3"
+          >
+            <span className="min-w-0">
+              <span className="block font-titre text-sm font-semibold">
+                {libelleHorsCommande(r)}
+              </span>
+              <span className="mt-0.5 block text-xs text-neutre-500">
+                {dateMoyenne(r.date_reception)}
+              </span>
+            </span>
+            <span className="shrink-0 rounded-full bg-ambre-50 px-2.5 py-1 text-xs font-semibold text-ambre-700">
+              en cours
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Entete from "../../Entete";
 import { getReception } from "@/lib/model";
-import { dateMoyenne } from "@/lib/format";
+import { dateMoyenne, libelleHorsCommande } from "@/lib/format";
 import SaisieReception from "./SaisieReception";
 
 export const dynamic = "force-dynamic";
@@ -17,12 +17,16 @@ export default async function PageReception({
   if (!donnees) notFound();
   const { reception, session, lignes, catalogue, fournisseur } = donnees;
 
-  const depannage = reception.type === "depannage";
+  // Dépannage et perte se saisissent de la même façon : en unités de stock,
+  // sans commande de référence.
+  const depannage = reception.type !== "livraison";
   const titre = depannage
-    ? `Dépannage${reception.provenance ? ` · ${reception.provenance}` : ""}`
+    ? libelleHorsCommande(reception)
     : `Réception ${fournisseur?.nom ?? ""}`;
   const sousTitre = depannage
-    ? "Achat hors commande"
+    ? reception.type === "perte"
+      ? "Produits jetés"
+      : "Achat hors commande"
     : session
       ? `commande du ${dateMoyenne(session.date_commande)}${session.libelle ? ` · ${session.libelle}` : ""}`
       : undefined;
