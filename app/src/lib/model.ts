@@ -339,7 +339,40 @@ export async function getAccueil(): Promise<ResumeFournisseur[]> {
  * relevés repris du classeur n'ont pas de date de validation : ils ne sont pas
  * proposés, personne n'ira réceptionner une livraison de juin.
  */
+/**
+ * Dépannages et pertes ouverts sans rien dedans : un essai, ou un bouton touché
+ * par erreur. On les cache de la liste au bout de 15 minutes et on les efface
+ * au bout de 12 heures — pas avant, au cas où un téléphone hors ligne (chez
+ * Metro…) aurait des saisies pas encore envoyées.
+ * Rend les ids à cacher.
+ */
+async function nettoyerHorsCommandeVides(): Promise<Set<number>> {
+  const { data, error } = await sb()
+    .from("cmd_receptions")
+    .select("id,created_at")
+    .in("type", ["depannage", "perte"])
+    .eq("statut", "brouillon");
+  if (error || !data?.length) return new Set();
+  const ids = data.map((r) => r.id as number);
+  const pleines = await sb()
+    .from("cmd_reception_lignes")
+    .select("reception_id")
+    .in("reception_id", ids)
+    .eq("recu", true);
+  if (pleines.error) return new Set();
+  const avecSaisie = new Set((pleines.data ?? []).map((l) => l.reception_id as number));
+  const maintenant = Date.now();
+  const age = (r: { created_at: string }) => maintenant - Date.parse(r.created_at);
+  const vides = data.filter((r) => !avecSaisie.has(r.id as number));
+  const aEffacer = vides.filter((r) => age(r) > 12 * 3600e3).map((r) => r.id as number);
+  if (aEffacer.length) {
+    await sb().from("cmd_receptions").delete().in("id", aEffacer).eq("statut", "brouillon");
+  }
+  return new Set(vides.filter((r) => age(r) > 15 * 60e3).map((r) => r.id as number));
+}
+
 export async function getReceptionsAccueil() {
+  const caches = await nettoyerHorsCommandeVides().catch(() => new Set<number>());
   const depuis = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
   const [sessions, receptions, fournisseurs] = await Promise.all([
     sb()
@@ -384,7 +417,7 @@ export async function getReceptionsAccueil() {
       session: s,
       reception: parSession.get(s.id) ?? null,
     })),
-    enCours: toutes.filter((r) => r.statut === "brouillon"),
+    enCours: toutes.filter((r) => r.statut === "brouillon" && !caches.has(r.id)),
     recentes: toutes.filter((r) => r.statut === "validee").slice(0, 20),
     fournisseurs,
   };

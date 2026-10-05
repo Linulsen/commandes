@@ -477,6 +477,16 @@ export default function SaisieReception({
         <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-2.5">
           <Link
             href="/receptions"
+            onClick={async (e) => {
+              // Dépannage ou perte quitté sans rien saisir : on ne le garde pas.
+              if (!(depannage && !fige && recus === 0 && envoi.cles.size === 0)) return;
+              e.preventDefault();
+              await fetch(`/api/receptions/${reception.id}`, { method: "DELETE" }).catch(
+                () => null,
+              );
+              router.push("/receptions");
+              router.refresh();
+            }}
             aria-label="Retour aux réceptions"
             className="-ml-1 flex min-h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-neutre-200 text-xl text-neutre-700"
           >

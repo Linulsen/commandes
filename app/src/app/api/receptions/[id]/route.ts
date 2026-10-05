@@ -30,12 +30,26 @@ export async function PATCH(
   return NextResponse.json({ ok: true });
 }
 
-/** Abandonner une réception ouverte par erreur. */
+/**
+ * Abandonner une réception ouverte par erreur. Seulement si rien n'y est coché :
+ * on ne jette jamais une saisie.
+ */
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const id = Number((await params).id);
+  if (!Number.isInteger(id)) {
+    return NextResponse.json({ erreur: "Requête invalide" }, { status: 400 });
+  }
+  const pleine = await sb()
+    .from("cmd_reception_lignes")
+    .select("id")
+    .eq("reception_id", id)
+    .eq("recu", true)
+    .limit(1);
+  if (pleine.error) return NextResponse.json({ erreur: pleine.error.message }, { status: 500 });
+  if (pleine.data?.length) return NextResponse.json({ ok: false, raison: "non vide" });
   const { error } = await sb()
     .from("cmd_receptions")
     .delete()
