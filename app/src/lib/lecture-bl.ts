@@ -135,7 +135,9 @@ Consignes :
 - Donne la quantité LIVRÉE en colis de l'appli. Si le document compte autrement (pièces, kg, cartons de taille différente), convertis avec « 1 colis = … » et explique la conversion dans « remarque ».
 - Si la quantité livrée diffère de la quantité commandée, ne la corrige pas : écris ce qui est sur le document.
 - Si un même produit apparaît sur plusieurs lignes, fais une entrée par ligne.
-- N'invente rien : si un chiffre est illisible, mets ta meilleure lecture et signale-le dans « remarque ».`
+- N'invente rien : si un chiffre est illisible, mets ta meilleure lecture et signale-le dans « remarque ».
+
+Réponds uniquement en appelant l'outil « bon_de_livraison », une seule fois, avec toutes les lignes.`
       : `Tu lis le ticket de caisse ou la facture d'un achat de dépannage (Metro, supermarché, autre restaurant…) fait par un restaurant Del Arte.
 ${pages}
 
@@ -148,7 +150,9 @@ Consignes :
 - Donne la quantité achetée dans l'UNITÉ DE STOCK du produit de l'appli (« compté en … ») : par exemple 2 cartons de 6 bouteilles comptées en bouteilles = 12 ; 3 barquettes de 500 g comptées en kg = 1,5. Explique toute conversion dans « remarque ».
 - Si la quantité est un poids ou un nombre de pièces impossible à convertir avec certitude, mets ta meilleure estimation et signale-le dans « remarque ».
 - Dans « fournisseur », mets l'enseigne ou le vendeur (ex. « Metro »).
-- N'invente rien : si un chiffre est illisible, mets ta meilleure lecture et signale-le dans « remarque ».`;
+- N'invente rien : si un chiffre est illisible, mets ta meilleure lecture et signale-le dans « remarque ».
+
+Réponds uniquement en appelant l'outil « bon_de_livraison », une seule fois, avec toutes les lignes.`;
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -159,9 +163,10 @@ Consignes :
     },
     body: JSON.stringify({
       model: MODELE_LECTURE,
-      max_tokens: 8000,
+      max_tokens: 16000,
       tools: [OUTIL],
-      tool_choice: { type: "tool", name: OUTIL.name },
+      // Ce modèle n'accepte pas d'outil imposé : la consigne demande de l'appeler.
+      tool_choice: { type: "auto" },
       messages: [
         {
           role: "user",
@@ -194,7 +199,22 @@ Consignes :
   }
 
   const bloc = corps?.content?.find((c) => c.type === "tool_use" && c.name === OUTIL.name);
-  const brut = (bloc?.input ?? null) as Partial<LectureBL> | null;
+  let brut = (bloc?.input ?? null) as Partial<LectureBL> | null;
+  if (!brut) {
+    // Au cas où le modèle répondrait en texte : on cherche le JSON dedans.
+    const texte = (corps?.content ?? [])
+      .map((c) => (c as { text?: string }).text ?? "")
+      .join("\n");
+    const debut = texte.indexOf("{");
+    const fin = texte.lastIndexOf("}");
+    if (debut >= 0 && fin > debut) {
+      try {
+        brut = JSON.parse(texte.slice(debut, fin + 1)) as Partial<LectureBL>;
+      } catch {
+        brut = null;
+      }
+    }
+  }
   if (!brut) throw new ErreurLecture("La lecture du bon n'a rien donné. Réessayez.", 502);
 
   const ids = new Set(produits.map((p) => p.id));
