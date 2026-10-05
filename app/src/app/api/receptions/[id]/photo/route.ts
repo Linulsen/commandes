@@ -33,9 +33,10 @@ export async function POST(
     const donnees = await getReception(id);
     if (!donnees) return NextResponse.json({ erreur: "Réception inconnue" }, { status: 404 });
     const { reception, lignes, catalogue, fournisseur } = donnees;
-    if (reception.type !== "livraison") {
-      return NextResponse.json({ erreur: "Réservé aux livraisons" }, { status: 400 });
+    if (reception.type === "perte") {
+      return NextResponse.json({ erreur: "Pas de lecture pour une perte" }, { status: 400 });
     }
+    const mode = reception.type === "livraison" ? "livraison" : "depannage";
     const commandes = new Map(
       lignes.map((l) => [l.produit_id, l.colis_commandes === null ? null : Number(l.colis_commandes)]),
     );
@@ -50,7 +51,12 @@ export async function POST(
         commandes: commandes.get(p.id) ?? null,
       }));
 
-    const lecture = await lireBonDeLivraison(images, produits, fournisseur?.nom ?? "inconnu");
+    const lecture = await lireBonDeLivraison(
+      images,
+      produits,
+      fournisseur?.nom ?? reception.provenance ?? "inconnu",
+      mode,
+    );
 
     const moi = await appareilCourant().catch(() => null);
     await sb()
@@ -61,6 +67,7 @@ export async function POST(
         objet_id: String(id),
         details: {
           modele: MODELE_LECTURE,
+          type: mode,
           pages: images.length,
           lignes: lecture.lignes.length,
           reconnues: lecture.lignes.filter((l) => l.produit_id !== null).length,

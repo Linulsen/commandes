@@ -27,7 +27,8 @@ async function preparer(fichier: File): Promise<Photo> {
   return { url, type: "image/jpeg", data: dataUrl.slice(dataUrl.indexOf(",") + 1) };
 }
 
-export type QuantiteLue = { produitId: number; colis: number };
+/** Colis pour une livraison, unités de stock pour un dépannage. */
+export type QuantiteLue = { produitId: number; quantite: number };
 
 /**
  * « Photographier le bon » : une ou plusieurs pages, lues par Claude. Les
@@ -36,16 +37,24 @@ export type QuantiteLue = { produitId: number; colis: number };
  */
 export default function PhotoBL({
   receptionId,
+  depannage,
   nomDe,
+  uniteDe,
   commandes,
   onAppliquer,
 }: {
   receptionId: number;
+  /** Dépannage : ticket de caisse, quantités en unités de stock. */
+  depannage: boolean;
+  uniteDe: (pid: number) => string;
   nomDe: (pid: number) => string;
   /** Produits commandés : id → colis commandés. */
   commandes: Map<number, number>;
-  onAppliquer: (quantites: QuantiteLue[]) => void;
+  onAppliquer: (quantites: QuantiteLue[], lecture: LectureBL) => void;
 }) {
+  const doc = depannage ? "ticket" : "bon";
+  const enUnites = (pid: number, q: number) =>
+    depannage ? `${qte(q)} ${uniteDe(pid)}` : `${qte(q)} colis`;
   const champ = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [ouvert, setOuvert] = useState(false);
@@ -86,9 +95,12 @@ export default function PhotoBL({
     const parProduit = new Map<number, number>();
     for (const l of res.lignes) {
       if (l.produit_id !== null)
-        parProduit.set(l.produit_id, (parProduit.get(l.produit_id) ?? 0) + l.colis);
+        parProduit.set(l.produit_id, (parProduit.get(l.produit_id) ?? 0) + l.quantite);
     }
-    onAppliquer([...parProduit].map(([produitId, colis]) => ({ produitId, colis })));
+    onAppliquer(
+      [...parProduit].map(([produitId, quantite]) => ({ produitId, quantite })),
+      res,
+    );
     for (const p of photos) URL.revokeObjectURL(p.url);
     setPhotos([]);
   };
@@ -120,7 +132,8 @@ export default function PhotoBL({
           onClick={() => champ.current?.click()}
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-rouge-700 bg-white px-4 font-titre text-sm font-semibold text-rouge-700"
         >
-          <span aria-hidden="true">📷</span> Photographier le bon de livraison
+          <span aria-hidden="true">📷</span>{" "}
+          {depannage ? "Photographier le ticket ou la facture" : "Photographier le bon de livraison"}
         </button>
         {erreur ? <p className="text-sm font-semibold text-rouge-700">{erreur}</p> : null}
       </>
@@ -131,7 +144,7 @@ export default function PhotoBL({
   if (lecture) {
     const lu = new Map<number, number>();
     for (const l of lecture.lignes)
-      if (l.produit_id !== null) lu.set(l.produit_id, (lu.get(l.produit_id) ?? 0) + l.colis);
+      if (l.produit_id !== null) lu.set(l.produit_id, (lu.get(l.produit_id) ?? 0) + l.quantite);
     const ecarts = [...lu].filter(([pid, c]) => commandes.has(pid) && commandes.get(pid) !== c);
     const horsCommande = [...lu].filter(([pid]) => !commandes.has(pid));
     const absents = [...commandes.keys()].filter((pid) => !lu.has(pid));
@@ -142,16 +155,26 @@ export default function PhotoBL({
       <div className="space-y-3 rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
         {!lecture.lisible ? (
           <p className="text-sm font-semibold text-rouge-700">
-            Le bon n’a pas pu être lu (photo floue, coupée ou mal éclairée). Reprenez la photo
+            Le {doc} n’a pas pu être lu (photo floue, coupée ou mal éclairée). Reprenez la photo
             bien à plat, tout le document dans le cadre.
           </p>
         ) : (
           <>
             <p className="text-sm font-semibold text-vert-800">
-              Bon lu{lecture.numero ? ` n° ${lecture.numero}` : ""} : {lu.size} produit
+              {depannage ? "Ticket lu" : "Bon lu"}
+              {lecture.numero ? ` n° ${lecture.numero}` : ""} : {lu.size} produit
               {lu.size > 1 ? "s" : ""} reporté{lu.size > 1 ? "s" : ""} ci-dessous. Vérifiez, puis
               validez.
             </p>
+            {depannage ? (
+              <Bloc titre="Produits ajoutés" vide="Aucun produit reconnu.">
+                {[...lu].map(([pid, q]) => (
+                  <li key={pid}>
+                    {nomDe(pid)} : {enUnites(pid, q)}
+                  </li>
+                ))}
+              </Bloc>
+            ) : (
             <Bloc titre="Écarts avec la commande" vide="Aucun : tout correspond.">
               {ecarts.map(([pid, c]) => (
                 <li key={pid}>
@@ -160,27 +183,28 @@ export default function PhotoBL({
                 </li>
               ))}
             </Bloc>
-            {absents.length ? (
+            )}
+            {!depannage && absents.length ? (
               <Bloc titre="Commandés mais absents du bon (laissés décochés)">
                 {absents.map((pid) => (
                   <li key={pid}>{nomDe(pid)}</li>
                 ))}
               </Bloc>
             ) : null}
-            {horsCommande.length ? (
+            {!depannage && horsCommande.length ? (
               <Bloc titre="Livrés sans être commandés (ajoutés)">
                 {horsCommande.map(([pid, c]) => (
                   <li key={pid}>
-                    {nomDe(pid)} : {qte(c)} colis
+                    {nomDe(pid)} : {enUnites(pid, c)}
                   </li>
                 ))}
               </Bloc>
             ) : null}
             {inconnues.length ? (
-              <Bloc titre="Lignes du bon non reconnues (à ajouter à la main si besoin)">
+              <Bloc titre={`Lignes du ${doc} non reconnues (à ajouter à la main si besoin)`}>
                 {inconnues.map((l, i) => (
                   <li key={i}>
-                    {l.libelle_bon} : {qte(l.colis)}
+                    {l.libelle_bon} : {qte(l.quantite)}
                     {l.remarque ? <span className="text-neutre-500"> · {l.remarque}</span> : null}
                   </li>
                 ))}
@@ -213,7 +237,7 @@ export default function PhotoBL({
     <div className="space-y-3 rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
       {input}
       <p className="text-sm font-semibold">
-        {photos.length} page{photos.length > 1 ? "s" : ""} du bon
+        {photos.length} page{photos.length > 1 ? "s" : ""} du {doc}
       </p>
       <div className="flex gap-2 overflow-x-auto">
         {photos.map((p, i) => (
@@ -237,7 +261,7 @@ export default function PhotoBL({
       </div>
       {erreur ? <p className="text-sm font-semibold text-rouge-700">{erreur}</p> : null}
       {enCours ? (
-        <p className="text-sm text-neutre-500">Lecture du bon… (jusqu’à une minute)</p>
+        <p className="text-sm text-neutre-500">Lecture du {doc}… (jusqu’à une minute)</p>
       ) : (
         <div className="flex gap-2">
           <button
@@ -258,7 +282,7 @@ export default function PhotoBL({
             disabled={photos.length === 0}
             className="min-h-12 flex-1 rounded-xl bg-rouge-700 px-3 font-titre text-sm font-semibold text-white disabled:opacity-35"
           >
-            Lire le bon
+            Lire le {doc}
           </button>
         </div>
       )}

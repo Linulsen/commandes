@@ -292,10 +292,12 @@ export default function SaisieReception({
           )}
         </div>
 
-        {!fige && !depannage ? (
+        {!fige && !perte ? (
           <PhotoBL
             receptionId={reception.id}
+            depannage={depannage}
             nomDe={(pid) => produit.get(pid)?.nom ?? `Produit ${pid}`}
+            uniteDe={(pid) => produit.get(pid)?.unite ?? "u"}
             commandes={
               new Map(
                 Object.entries(etats)
@@ -303,9 +305,14 @@ export default function SaisieReception({
                   .map(([pid, e]) => [Number(pid), e.commandes!]),
               )
             }
-            onAppliquer={(quantites) => {
-              for (const { produitId, colis } of quantites)
-                modifier(produitId, { quantite: colis, recu: colis > 0 });
+            onAppliquer={(quantites, lecture) => {
+              for (const { produitId, quantite } of quantites)
+                modifier(produitId, { quantite, recu: quantite > 0 });
+              // Dépannage : l'enseigne du ticket, si « Où » n'est pas rempli.
+              if (depannage && !provenance.trim() && lecture.fournisseur) {
+                setProvenance(lecture.fournisseur);
+                void majEntete({ provenance: lecture.fournisseur });
+              }
               setCommandesSeules(true);
               setRecherche("");
             }}

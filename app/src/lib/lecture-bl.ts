@@ -27,7 +27,8 @@ export type LigneLue = {
   /** Produit de l'appli, ou null si la ligne du bon n'a pas été reconnue. */
   produit_id: number | null;
   libelle_bon: string;
-  colis: number;
+  /** Colis pour une livraison, unités de stock pour un dépannage. */
+  quantite: number;
   remarque?: string;
 };
 
@@ -42,7 +43,9 @@ export type LectureBL = {
   usage?: { entree: number; sortie: number };
 };
 
-const OUTIL = {
+export type ModeLecture = "livraison" | "depannage";
+
+const outil = (mode: ModeLecture) => ({
   name: "bon_de_livraison",
   description: "Enregistre le contenu lu sur le bon de livraison ou la facture.",
   input_schema: {
@@ -67,10 +70,12 @@ const OUTIL = {
                 "id du produit de la liste qui correspond à cette ligne, ou null si aucun ne correspond avec certitude.",
             },
             libelle_bon: { type: "string", description: "Libellé tel qu'écrit sur le document." },
-            colis: {
+            quantite: {
               type: "number",
               description:
-                "Quantité livrée exprimée en colis de l'appli (voir « 1 colis = … »). 0 si la ligne indique explicitement une rupture ou un produit non livré.",
+                mode === "livraison"
+                  ? "Quantité livrée exprimée en colis de l'appli (voir « 1 colis = … »). 0 si la ligne indique explicitement une rupture ou un produit non livré."
+                  : "Quantité achetée exprimée dans l'unité de stock du produit de l'appli (voir « compté en … »).",
             },
             remarque: {
               type: "string",
@@ -78,7 +83,7 @@ const OUTIL = {
                 "Courte remarque en français si doute, conversion faite, rupture, avoir… Sinon omettre.",
             },
           },
-          required: ["produit_id", "libelle_bon", "colis"],
+          required: ["produit_id", "libelle_bon", "quantite"],
         },
       },
       commentaire: {
@@ -88,11 +93,13 @@ const OUTIL = {
     },
     required: ["lisible", "lignes"],
   },
-} as const;
+});
 
-function listeProduits(produits: ProduitALire[]) {
+function listeProduits(produits: ProduitALire[], mode: ModeLecture) {
   return produits
     .map((p) => {
+      if (mode === "depannage")
+        return `${p.id} | ${p.nom} | compté en ${p.unite ?? "unités"}${p.conditionnement ? ` (chez le fournisseur habituel : ${p.conditionnement})` : ""}`;
       const colis = `1 colis = ${p.fact} ${p.unite ?? "u"}${p.conditionnement ? ` (${p.conditionnement})` : ""}`;
       const cde = p.commandes != null ? ` · COMMANDÉ : ${p.commandes} colis` : "";
       return `${p.id} | ${p.nom} | ${colis}${cde}`;
@@ -104,15 +111,23 @@ export async function lireBonDeLivraison(
   images: ImageBL[],
   produits: ProduitALire[],
   fournisseur: string,
+  mode: ModeLecture = "livraison",
 ): Promise<LectureBL> {
+  const OUTIL = outil(mode);
   const cle = process.env.ANTHROPIC_API_KEY;
   if (!cle) throw new ErreurLecture("La clé API Anthropic n'est pas configurée.", 503);
 
-  const consigne = `Tu lis le bon de livraison (ou la facture) d'un restaurant Del Arte, fournisseur attendu : ${fournisseur}.
-${images.length > 1 ? `Il y a ${images.length} photos : ce sont les pages successives du même document.` : ""}
+  const pages =
+    images.length > 1
+      ? `Il y a ${images.length} photos : ce sont les pages successives du même document.`
+      : "";
+  const consigne =
+    mode === "livraison"
+      ? `Tu lis le bon de livraison (ou la facture) d'un restaurant Del Arte, fournisseur attendu : ${fournisseur}.
+${pages}
 
 Produits de ce fournisseur dans l'appli (id | nom | taille d'un colis · quantité commandée) :
-${listeProduits(produits)}
+${listeProduits(produits, mode)}
 
 Consignes :
 - Relève chaque ligne de produit du document (pas les totaux, la TVA, les consignes de palettes, les frais de port).
@@ -120,6 +135,19 @@ Consignes :
 - Donne la quantité LIVRÉE en colis de l'appli. Si le document compte autrement (pièces, kg, cartons de taille différente), convertis avec « 1 colis = … » et explique la conversion dans « remarque ».
 - Si la quantité livrée diffère de la quantité commandée, ne la corrige pas : écris ce qui est sur le document.
 - Si un même produit apparaît sur plusieurs lignes, fais une entrée par ligne.
+- N'invente rien : si un chiffre est illisible, mets ta meilleure lecture et signale-le dans « remarque ».`
+      : `Tu lis le ticket de caisse ou la facture d'un achat de dépannage (Metro, supermarché, autre restaurant…) fait par un restaurant Del Arte.
+${pages}
+
+Produits du restaurant dans l'appli (id | nom | unité de stock) :
+${listeProduits(produits, mode)}
+
+Consignes :
+- Relève chaque article acheté (pas les totaux, la TVA, les consignes, les remises, les sacs).
+- Associe chaque article au produit de la liste qui correspond, d'après le libellé, la marque, le poids ou le format. Les libellés des tickets sont très abrégés. Si aucun ne correspond avec une bonne certitude, mets produit_id à null.
+- Donne la quantité achetée dans l'UNITÉ DE STOCK du produit de l'appli (« compté en … ») : par exemple 2 cartons de 6 bouteilles comptées en bouteilles = 12 ; 3 barquettes de 500 g comptées en kg = 1,5. Explique toute conversion dans « remarque ».
+- Si la quantité est un poids ou un nombre de pièces impossible à convertir avec certitude, mets ta meilleure estimation et signale-le dans « remarque ».
+- Dans « fournisseur », mets l'enseigne ou le vendeur (ex. « Metro »).
 - N'invente rien : si un chiffre est illisible, mets ta meilleure lecture et signale-le dans « remarque ».`;
 
   const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -172,12 +200,13 @@ Consignes :
   const ids = new Set(produits.map((p) => p.id));
   const lignes: LigneLue[] = (Array.isArray(brut.lignes) ? brut.lignes : [])
     .map((l) => {
-      const colis = Number(l?.colis);
+      const quantite = Number(l?.quantite);
       const pid = Number(l?.produit_id);
       return {
         produit_id: Number.isInteger(pid) && ids.has(pid) ? pid : null,
         libelle_bon: String(l?.libelle_bon ?? "").slice(0, 200),
-        colis: Number.isFinite(colis) && colis >= 0 ? Math.round(colis * 1000) / 1000 : 0,
+        quantite:
+          Number.isFinite(quantite) && quantite >= 0 ? Math.round(quantite * 1000) / 1000 : 0,
         ...(l?.remarque ? { remarque: String(l.remarque).slice(0, 300) } : {}),
       };
     })
