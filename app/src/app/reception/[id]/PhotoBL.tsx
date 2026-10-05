@@ -86,7 +86,7 @@ export default function PhotoBL({
     const corps = await r?.json().catch(() => null);
     setEnCours(false);
     if (!r?.ok || !corps) {
-      setErreur(corps?.erreur ?? "Lecture impossible (réseau ?)");
+      setErreur(corps?.erreur ?? `Lecture impossible (${r ? `erreur ${r.status}` : "réseau ?"})`);
       return;
     }
     const res = corps as LectureBL;

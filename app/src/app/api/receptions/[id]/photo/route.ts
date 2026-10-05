@@ -88,6 +88,9 @@ export async function POST(
       return NextResponse.json({ erreur: e.message }, { status: e.statut });
     }
     console.error("Lecture du BL :", e);
-    return NextResponse.json({ erreur: "La lecture du bon a échoué." }, { status: 500 });
+    return NextResponse.json(
+      { erreur: `La lecture a échoué (${e instanceof Error ? e.message.slice(0, 200) : "erreur inconnue"})` },
+      { status: 500 },
+    );
   }
 }

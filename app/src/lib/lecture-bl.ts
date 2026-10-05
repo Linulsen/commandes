@@ -190,7 +190,7 @@ Consignes :
       throw new ErreurLecture("Crédit API épuisé : rechargez-le sur platform.claude.com.", 502);
     if (r.status === 429 || r.status === 529)
       throw new ErreurLecture("Service occupé : réessayez dans une minute.", 503);
-    throw new ErreurLecture("La lecture du bon a échoué. Réessayez.", 502);
+    throw new ErreurLecture(`La lecture a échoué (${r.status} : ${msg.slice(0, 200)})`, 502);
   }
 
   const bloc = corps?.content?.find((c) => c.type === "tool_use" && c.name === OUTIL.name);
