@@ -97,6 +97,18 @@ export async function changerCodeAdmin(ancien: string, nouveau: string): Promise
   return String(data);
 }
 
+/** Nouveau code responsable, décidé par l'administrateur (l'ancien n'est pas demandé). */
+export async function redefinirCodeResponsable(nouveau: string): Promise<string> {
+  const moi = await appareilCourant();
+  const { data, error } = await sb().rpc("app_redefinir_code_responsable", {
+    p_nouveau: nouveau,
+    p_appareil: moi?.id ?? null,
+    p_prenom: moi?.prenom ?? null,
+  });
+  if (error) throw new Error(error.message);
+  return String(data);
+}
+
 const optionsCookie = (maxAge: number) => ({
   httpOnly: true,
   sameSite: "lax" as const,

@@ -93,6 +93,7 @@ export type Database = {
         Args: ArgsCode & { p_code_responsable: string; p_nouveau: string };
         Returns: string;
       };
+      app_redefinir_code_responsable: { Args: ArgsCode & { p_nouveau: string }; Returns: string };
       app_changer_code_admin: {
         Args: ArgsCode & { p_ancien: string; p_nouveau: string };
         Returns: string;

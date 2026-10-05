@@ -10,6 +10,7 @@ import {
   fermerAdmin,
   listeAppareils,
   ouvrirAdmin,
+  redefinirCodeResponsable,
   verifierCodeAdmin,
   type FicheAppareil,
 } from "@/lib/admin";
@@ -27,6 +28,7 @@ const MESSAGES: Record<string, string> = {
   soi: "Vous ne pouvez pas retirer l’appareil que vous utilisez.",
   code_change: "Code Administrateur changé.",
   code_cree: "Code Administrateur créé.",
+  responsable_change: "Code responsable changé.",
 };
 
 function quand(iso: string | null) {
@@ -99,6 +101,18 @@ export default async function PageAppareils({
     }
     const r = await changerCodeAdmin(String(formData.get("ancien") ?? ""), nouveau);
     redirect(`/admin/appareils?message=${r === "ok" ? "code_change" : r}`);
+  }
+
+  async function changerResponsable(formData: FormData) {
+    "use server";
+    if (!(await adminActif())) redirect("/admin/appareils");
+    const nouveau = String(formData.get("nouveau") ?? "");
+    if (nouveau !== String(formData.get("confirmation") ?? "")) {
+      redirect("/admin/appareils?message=differents");
+    }
+    const r = await redefinirCodeResponsable(nouveau);
+    await ouvrirAdmin();
+    redirect(`/admin/appareils?message=${r === "ok" ? "responsable_change" : r}`);
   }
 
   async function quitter() {
@@ -202,6 +216,29 @@ export default async function PageAppareils({
             </label>
             <button className="mt-4 min-h-12 w-full rounded-xl bg-neutre-900 font-titre text-sm font-semibold text-white">
               Changer le code
+            </button>
+          </form>
+        </details>
+
+        <details className="rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
+          <summary className="cursor-pointer font-titre text-sm font-semibold">
+            Changer le code responsable
+          </summary>
+          <p className="mt-2 text-sm leading-relaxed text-neutre-500">
+            Le code responsable protège l’inventaire. En tant qu’administrateur, vous le
+            remplacez sans avoir à connaître l’ancien.
+          </p>
+          <form action={changerResponsable} className="mt-3">
+            <label className="block text-sm font-semibold">
+              Nouveau code responsable (4 caractères au moins)
+              <input name="nouveau" type="password" autoComplete="new-password" className={champ} />
+            </label>
+            <label className="mt-3 block text-sm font-semibold">
+              Retapez le nouveau code
+              <input name="confirmation" type="password" autoComplete="new-password" className={champ} />
+            </label>
+            <button className="mt-4 min-h-12 w-full rounded-xl bg-neutre-900 font-titre text-sm font-semibold text-white">
+              Changer le code responsable
             </button>
           </form>
         </details>
