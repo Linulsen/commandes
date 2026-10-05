@@ -15,6 +15,7 @@ import type { ProduitCatalogue } from "@/lib/model";
 import type { Reception } from "@/lib/types";
 import { useEcranAllume } from "@/lib/ecran";
 import EtatEnvoi from "../../EtatEnvoi";
+import PhotoBL from "./PhotoBL";
 import Pave, { frappeDe, frapper, montrerLigne, type Frappe, type Raccourci } from "../../Pave";
 
 export type LigneRec = {
@@ -290,6 +291,26 @@ export default function SaisieReception({
             </p>
           )}
         </div>
+
+        {!fige && !depannage ? (
+          <PhotoBL
+            receptionId={reception.id}
+            nomDe={(pid) => produit.get(pid)?.nom ?? `Produit ${pid}`}
+            commandes={
+              new Map(
+                Object.entries(etats)
+                  .filter(([, e]) => e.commandes != null && e.commandes > 0)
+                  .map(([pid, e]) => [Number(pid), e.commandes!]),
+              )
+            }
+            onAppliquer={(quantites) => {
+              for (const { produitId, colis } of quantites)
+                modifier(produitId, { quantite: colis, recu: colis > 0 });
+              setCommandesSeules(true);
+              setRecherche("");
+            }}
+          />
+        ) : null}
 
         {!fige ? (
           <div className="flex items-center gap-2">
