@@ -221,6 +221,16 @@ export default async function Accueil() {
             )}
           </section>
         ) : null}
+
+        <Link
+          href="/admin/appareils"
+          className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-1 text-sm text-neutre-500"
+        >
+          <span aria-hidden="true">🔒</span>
+          <span className="underline decoration-neutre-200 underline-offset-4">
+            Appareils · administrateur
+          </span>
+        </Link>
       </div>
       <Precharger urls={inventaire?.enCours ? [...aPrecharger, `/inventaire/${inventaire.enCours.id}`] : aPrecharger} />
       <BarreNav actif="/" />

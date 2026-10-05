@@ -54,3 +54,60 @@ export const COOKIE_DUREE = DUREE_JOURS * 86400;
 export const COOKIE_APPAREIL = "praedic_appareil";
 export const COOKIE_PRENOM = "praedic_prenom";
 export const COOKIE_APPAREIL_DUREE = 400 * 86400;
+
+/**
+ * Valeur signée, sans date d'expiration propre : « valeur.signature ». Sert aux
+ * cookies qui portent l'identifiant de l'appareil et l'heure d'émission (accès
+ * autorisé, session administrateur) : la signature empêche de les fabriquer.
+ */
+export async function signerValeur(valeur: string): Promise<string> {
+  return `${valeur}.${await signer(valeur)}`;
+}
+
+/** La valeur d'un jeton signé, ou null si la signature ne correspond pas. */
+export async function valeurSignee(jeton: string | undefined): Promise<string | null> {
+  if (!jeton) return null;
+  const i = jeton.lastIndexOf(".");
+  if (i <= 0) return null;
+  const valeur = jeton.slice(0, i);
+  const sig = jeton.slice(i + 1);
+  const attendu = await signer(valeur);
+  if (sig.length !== attendu.length) return null;
+  let ecart = 0;
+  for (let k = 0; k < sig.length; k++) ecart |= sig.charCodeAt(k) ^ attendu.charCodeAt(k);
+  return ecart === 0 ? valeur : null;
+}
+
+/**
+ * Jeton « appareil:heure » valide pour cet appareil et pas plus vieux que
+ * `dureeMs`. Utilisé pour l'autorisation de l'appareil et la session
+ * administrateur.
+ */
+export async function jetonAppareilValide(
+  jeton: string | undefined,
+  appareil: string | undefined,
+  dureeMs: number,
+): Promise<boolean> {
+  if (!appareil) return false;
+  const valeur = await valeurSignee(jeton);
+  if (!valeur) return false;
+  const [id, quand] = valeur.split(":");
+  const age = Date.now() - Number(quand);
+  return id === appareil && Number.isFinite(age) && age >= 0 && age < dureeMs;
+}
+
+export async function creerJetonAppareil(appareil: string): Promise<string> {
+  return signerValeur(`${appareil}:${Date.now()}`);
+}
+
+/**
+ * Appareil autorisé : le statut est relu dans la base au plus toutes les
+ * 5 minutes ; entre deux lectures, ce cookie signé suffit. Un appareil retiré
+ * par l'administrateur est donc bloqué dans les 5 minutes.
+ */
+export const COOKIE_AUTORISE = "praedic_autorise";
+export const AUTORISE_DUREE_MS = 5 * 60 * 1000;
+
+/** Session administrateur (page Appareils) : 10 minutes, puis le code est redemandé. */
+export const COOKIE_ADMIN = "praedic_admin";
+export const ADMIN_DUREE_MS = 10 * 60 * 1000;

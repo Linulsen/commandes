@@ -18,7 +18,15 @@ type AppareilEnregistre = {
   premiere_connexion: string;
   derniere_connexion: string;
   deconnecte_le: string | null;
+  statut: "en_attente" | "autorise" | "retire";
+  autorise_le: string | null;
+  autorise_par: string | null;
+  retire_le: string | null;
 };
+
+type Parametre = { cle: string; valeur: string; modifie_le: string };
+
+type ArgsCode = { p_appareil?: string | null; p_prenom?: string | null };
 
 type EntreeJournal = {
   id: number;
@@ -66,6 +74,7 @@ export type Database = {
         AppareilEnregistre,
         Partial<AppareilEnregistre> & { id: string; nom: string }
       >;
+      app_parametres: Table<Parametre, Parametre>;
       app_journal: Table<
         EntreeJournal,
         Partial<Omit<EntreeJournal, "id">> & { action: string; objet: string }
@@ -78,6 +87,15 @@ export type Database = {
       cmd_commande: {
         Args: { p_session_id: number };
         Returns: CommandeRpc;
+      };
+      app_verifier_code_admin: { Args: ArgsCode & { p_code: string }; Returns: string };
+      app_creer_code_admin: {
+        Args: ArgsCode & { p_code_responsable: string; p_nouveau: string };
+        Returns: string;
+      };
+      app_changer_code_admin: {
+        Args: ArgsCode & { p_ancien: string; p_nouveau: string };
+        Returns: string;
       };
     };
     Enums: Record<never, never>;
