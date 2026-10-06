@@ -107,6 +107,16 @@ function listeProduits(produits: ProduitALire[], mode: ModeLecture) {
     .join("\n");
 }
 
+/**
+ * Particularités connues des documents d'un fournisseur (dites par Nicolas).
+ * Cledor : le nombre de colis imprimé sur le BL est souvent faux.
+ */
+function consigneFournisseur(fournisseur: string) {
+  if (/cl[eé]dor/i.test(fournisseur))
+    return "- Bons Cledor : la colonne du nombre de colis est souvent FAUSSE, ne t'en sers jamais. Prends uniquement la quantité et son unité (kg, pièce, botte, sachet, main…) et convertis-la en colis de l'appli avec « 1 colis = … ». Indique la quantité et l'unité lues dans « remarque ».\n";
+  return "";
+}
+
 export async function lireBonDeLivraison(
   images: ImageBL[],
   produits: ProduitALire[],
@@ -133,7 +143,7 @@ Consignes :
 - Relève chaque ligne de produit du document (pas les totaux, la TVA, les consignes de palettes, les frais de port).
 - Associe chaque ligne au produit de la liste qui correspond, d'après le libellé, la marque, le poids ou le format. Les libellés du fournisseur sont souvent abrégés. Privilégie les produits commandés en cas d'hésitation. Si aucun ne correspond avec une bonne certitude, mets produit_id à null.
 - Donne la quantité LIVRÉE en colis de l'appli. Si le document compte autrement (pièces, kg, cartons de taille différente), convertis avec « 1 colis = … » et explique la conversion dans « remarque ».
-- Si la quantité livrée diffère de la quantité commandée, ne la corrige pas : écris ce qui est sur le document.
+${consigneFournisseur(fournisseur)}- Si la quantité livrée diffère de la quantité commandée, ne la corrige pas : écris ce qui est sur le document.
 - Si un même produit apparaît sur plusieurs lignes, fais une entrée par ligne.
 - N'invente rien : si un chiffre est illisible, mets ta meilleure lecture et signale-le dans « remarque ».
 
