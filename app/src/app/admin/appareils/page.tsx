@@ -14,6 +14,13 @@ import {
   verifierCodeAdmin,
   type FicheAppareil,
 } from "@/lib/admin";
+import {
+  changerVerrou,
+  definirCodePersonnel,
+  etatVerrou,
+  interrupteurVerrou,
+  supprimerCodePersonnel,
+} from "@/lib/codes-personnels";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +36,11 @@ const MESSAGES: Record<string, string> = {
   code_change: "Code Administrateur changé.",
   code_cree: "Code Administrateur créé.",
   responsable_change: "Code responsable changé.",
+  perso_enregistre: "Code personnel enregistré.",
+  perso_invalide: "Indiquez un prénom et un code de 4 à 8 chiffres.",
+  perso_supprime: "Code personnel supprimé.",
+  verrou_active: "Verrouillage activé : il s’appliquera sur chaque appareil à sa prochaine ouverture avec du réseau.",
+  verrou_desactive: "Verrouillage désactivé.",
 };
 
 function quand(iso: string | null) {
@@ -115,6 +127,35 @@ export default async function PageAppareils({
     redirect(`/admin/appareils?message=${r === "ok" ? "responsable_change" : r}`);
   }
 
+  async function enregistrerCodePerso(formData: FormData) {
+    "use server";
+    if (!(await adminActif())) redirect("/admin/appareils");
+    const code = String(formData.get("code") ?? "");
+    if (code !== String(formData.get("confirmation") ?? "")) {
+      redirect("/admin/appareils?message=differents");
+    }
+    const r = await definirCodePersonnel(String(formData.get("prenom") ?? ""), code);
+    await ouvrirAdmin();
+    redirect(`/admin/appareils?message=${r === "ok" ? "perso_enregistre" : "perso_invalide"}`);
+  }
+
+  async function retirerCodePerso(formData: FormData) {
+    "use server";
+    if (!(await adminActif())) redirect("/admin/appareils");
+    await supprimerCodePersonnel(String(formData.get("prenom") ?? ""));
+    await ouvrirAdmin();
+    redirect("/admin/appareils?message=perso_supprime");
+  }
+
+  async function basculerVerrou(formData: FormData) {
+    "use server";
+    if (!(await adminActif())) redirect("/admin/appareils");
+    const activer = formData.get("activer") === "oui";
+    await changerVerrou(activer);
+    await ouvrirAdmin();
+    redirect(`/admin/appareils?message=${activer ? "verrou_active" : "verrou_desactive"}`);
+  }
+
   async function quitter() {
     "use server";
     await fermerAdmin();
@@ -176,7 +217,11 @@ export default async function PageAppareils({
     );
   }
 
-  const appareils = await listeAppareils();
+  const [appareils, verrou, verrouDemande] = await Promise.all([
+    listeAppareils(),
+    etatVerrou(),
+    interrupteurVerrou(),
+  ]);
   const enAttente = appareils.filter((a) => a.statut === "en_attente").length;
 
   return (
@@ -196,6 +241,87 @@ export default async function PageAppareils({
             <LigneAppareil key={a.id} a={a} moi={a.id === moi?.id} action={statut} />
           ))}
         </ul>
+
+        <section className="rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-titre text-base font-semibold">Codes personnels</h2>
+              <p className="mt-1 text-sm leading-relaxed text-neutre-500">
+                Après 10 minutes sans utilisation, l’appli demande le prénom et le code
+                personnel. Le code se vérifie sur le téléphone, même sans réseau.
+              </p>
+            </div>
+            <span
+              className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                verrou.actif ? "bg-vert-100 text-vert-800" : "bg-neutre-100 text-neutre-500"
+              }`}
+            >
+              {verrou.actif ? "activé" : "désactivé"}
+            </span>
+          </div>
+
+          {verrou.personnes.length ? (
+            <ul className="mt-3 divide-y divide-neutre-100 rounded-xl border border-neutre-100">
+              {verrou.personnes.map((p) => (
+                <li key={p.prenom} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="text-sm font-semibold">{p.prenom}</span>
+                  <form action={retirerCodePerso}>
+                    <input type="hidden" name="prenom" value={p.prenom} />
+                    <button className="min-h-10 rounded-xl border border-rouge-200 px-3 text-sm font-semibold text-rouge-700">
+                      Supprimer
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-neutre-500">Aucun code personnel pour l’instant.</p>
+          )}
+
+          <details className="mt-3">
+            <summary className="cursor-pointer text-sm font-semibold text-rouge-700">
+              Ajouter une personne ou changer son code
+            </summary>
+            <form action={enregistrerCodePerso} className="mt-3">
+              <label className="block text-sm font-semibold">
+                Prénom
+                <input name="prenom" autoComplete="off" className={champ} />
+              </label>
+              <label className="mt-3 block text-sm font-semibold">
+                Code (4 à 8 chiffres)
+                <input name="code" type="password" inputMode="numeric" pattern="[0-9]{4,8}" autoComplete="new-password" className={champ} />
+              </label>
+              <label className="mt-3 block text-sm font-semibold">
+                Retapez le code
+                <input name="confirmation" type="password" inputMode="numeric" pattern="[0-9]{4,8}" autoComplete="new-password" className={champ} />
+              </label>
+              <button className="mt-4 min-h-12 w-full rounded-xl bg-neutre-900 font-titre text-sm font-semibold text-white">
+                Enregistrer le code
+              </button>
+              <p className="mt-2 text-xs leading-relaxed text-neutre-500">
+                Même prénom qu’une personne de la liste : son code est remplacé.
+              </p>
+            </form>
+          </details>
+
+          <form action={basculerVerrou} className="mt-4">
+            <input type="hidden" name="activer" value={verrouDemande ? "non" : "oui"} />
+            <button
+              disabled={!verrouDemande && verrou.personnes.length === 0}
+              className={`min-h-12 w-full rounded-xl font-titre text-sm font-semibold disabled:opacity-40 ${
+                verrouDemande ? "border border-neutre-200 bg-white text-neutre-700" : "bg-rouge-700 text-white"
+              }`}
+            >
+              {verrouDemande ? "Désactiver le verrouillage" : "Activer le verrouillage"}
+            </button>
+            {!verrouDemande ? (
+              <p className="mt-2 text-xs leading-relaxed text-neutre-500">
+                Créez d’abord un code pour chaque personne de l’équipe : une fois activé,
+                personne ne peut plus entrer sans le sien.
+              </p>
+            ) : null}
+          </form>
+        </section>
 
         <details className="rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
           <summary className="cursor-pointer font-titre text-sm font-semibold">

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Jost, Nunito_Sans } from "next/font/google";
 import "./globals.css";
 import HorsLigne from "./HorsLigne";
+import Verrou from "./Verrou";
 
 // Les deux polices de Del Arte disponibles librement. Leur police de titrage
 // maison, Bely Display, est sous licence commerciale : Jost en tient lieu.
@@ -47,6 +48,7 @@ export default function RootLayout({
       <body className="min-h-screen font-sans antialiased">
         {children}
         <HorsLigne />
+        <Verrou />
       </body>
     </html>
   );

@@ -4,6 +4,7 @@ import { getAccueil, getReceptionsAccueil } from "@/lib/model";
 import Precharger from "./Precharger";
 import Installer from "./Installer";
 import BarreNav from "./BarreNav";
+import ChangerUtilisateur from "./ChangerUtilisateur";
 import { dateMoyenne } from "@/lib/format";
 import { appareilCourant } from "@/lib/appareil";
 import { getResumeInventaire } from "@/lib/inventaire";
@@ -43,17 +44,7 @@ export default async function Accueil() {
       <div className="mx-auto max-w-2xl space-y-3 px-4 py-4">
         <Installer />
         {appareil?.prenom ? (
-          <Link
-            href="/appareil?suite=/"
-            className="flex min-h-11 items-center justify-between gap-3 rounded-xl px-1 text-sm text-neutre-500"
-          >
-            <span>
-              Connecté : <span className="font-semibold text-neutre-700">{appareil.prenom}</span>
-            </span>
-            <span className="text-rouge-700 underline decoration-rouge-200 underline-offset-4">
-              Changer
-            </span>
-          </Link>
+          <ChangerUtilisateur prenom={appareil.prenom} />
         ) : null}
         {resumes.map(
           ({ fournisseur, nbProduits, derniereValidee, brouillon, prochaineDate, prochainLibelle }) => (
