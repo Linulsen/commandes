@@ -1005,6 +1005,10 @@ function Fiche({
           </div>
           )}
 
+          {/* Les pertes se déclarent désormais dans Réceptions → Perte. Le
+              cadre ne reste que sur un relevé qui porte une ancienne perte,
+              pour pouvoir la voir ou la corriger. */}
+          {etat.perte ? (
           <button
             onClick={onPerte}
             disabled={fige}
@@ -1018,6 +1022,7 @@ function Fiche({
               {etat.perte ? `${qte(etat.perte)} ${u}` : fige ? "—" : "Déclarer"}
             </span>
           </button>
+          ) : null}
 
           <div className="pt-1">
             <h3 className="px-1 font-titre text-xs font-bold uppercase tracking-[0.14em] text-neutre-500">
