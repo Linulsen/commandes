@@ -56,7 +56,7 @@ export default async function Connexion({
         <form action={entrer} className="mt-8">
           <input type="hidden" name="suite" value={suite ?? "/"} />
           <label htmlFor="code" className="block text-sm font-semibold">
-            Code d’accès
+            Mot de passe
           </label>
           <input
             id="code"
@@ -67,7 +67,7 @@ export default async function Connexion({
             className="mt-2 min-h-13 w-full rounded-xl border border-rouge-800 bg-rouge-800 px-4 py-3 text-base text-white placeholder:text-rouge-200 outline-none focus:border-white"
           />
           {erreur === "code" ? (
-            <p className="mt-2 text-sm font-semibold text-rouge-50">Code incorrect.</p>
+            <p className="mt-2 text-sm font-semibold text-rouge-50">Mot de passe incorrect.</p>
           ) : null}
 
           <ChampsAppareil prenom={appareil?.prenom ?? ""} nom={nom ?? ""} />
