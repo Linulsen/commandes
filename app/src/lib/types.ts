@@ -5,8 +5,6 @@ export type Fournisseur = {
   frequence: string;
   rythme: string | null;
   ordre: number;
-  /** Relevé en cartons + unités (Cave, Réserve sèche, Économat, Chambre négative). */
-  saisie_colis?: boolean;
 };
 
 export type Zone = {
@@ -16,6 +14,8 @@ export type Zone = {
   slug: string;
   secteur: string | null;
   ordre: number;
+  /** Relevé en cartons + unités (Cave, Réserve sèche, Économat, Chambre négative). */
+  saisie_colis?: boolean;
 };
 
 export type Produit = {
