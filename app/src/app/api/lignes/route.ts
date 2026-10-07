@@ -52,6 +52,8 @@ async function enregistrer(lignes: Brute[]) {
     // Un téléphone resté sur l'ancienne version n'envoie pas la perte : ne
     // pas l'effacer pour autant.
     if ("perte" in l) ligne.perte = nombre(l.perte);
+    // Saisie en cartons + unités : le stock reste le total en unités.
+    if ("stockColis" in l) ligne.stock_colis = nombre(l.stockColis);
     aEcrire.set(`${sessionId}:${produitId}`, ligne);
   });
 

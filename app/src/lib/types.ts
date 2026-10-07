@@ -5,6 +5,8 @@ export type Fournisseur = {
   frequence: string;
   rythme: string | null;
   ordre: number;
+  /** Relevé en cartons + unités (Cave, Réserve sèche, Économat, Chambre négative). */
+  saisie_colis?: boolean;
 };
 
 export type Zone = {
@@ -59,6 +61,8 @@ export type Ligne = {
   note: string | null;
   /** Quantité jetée depuis le relevé précédent, en unités de stock. */
   perte: number | null;
+  /** Cartons saisis au relevé, déjà inclus dans `stock`. */
+  stock_colis?: number | null;
   maj_le: string | null;
 };
 

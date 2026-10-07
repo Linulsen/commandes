@@ -60,6 +60,11 @@ export default async function Commande({
           stock: l.ligne.stock === null ? null : Number(l.ligne.stock),
           colis: l.ligne.colis === null ? null : Number(l.ligne.colis),
           perte: l.ligne.perte === null ? null : Number(l.ligne.perte),
+          stockColis: l.ligne.stock_colis == null ? null : Number(l.ligne.stock_colis),
+          parCarton:
+            l.zone.saisie_colis === true &&
+            l.produit.compte_pour == null &&
+            Number(l.produit.fact) > 1,
           majLe: l.ligne.maj_le ? Date.parse(l.ligne.maj_le) : 0,
           suggestionEnregistree:
             l.ligne.suggestion === null ? null : Number(l.ligne.suggestion),

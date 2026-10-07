@@ -35,6 +35,10 @@ export type LigneSaisie = {
   stock: number | null;
   colis: number | null;
   perte: number | null;
+  /** Cartons saisis (déjà inclus dans `stock`). */
+  stockColis: number | null;
+  /** Le stock se saisit en deux cases : cartons et unités. */
+  parCarton: boolean;
   /** Dernière écriture côté serveur, en millisecondes. */
   majLe: number;
   /** Quantité que l'application proposait lors de la saisie précédente. */
@@ -48,14 +52,32 @@ export type LigneSaisie = {
 };
 
 type Etat = {
+  /** Stock total, en unités de comptage : c'est lui qui sert au calcul. */
   stock: number | null;
+  /** Saisie en cartons + unités : les deux cases telles que tapées. */
+  cartons: number | null;
+  unites: number | null;
   colis: number | null;
   force: boolean;
   perte: number | null;
 };
 
 /** Ce que le pavé est en train de remplir. */
-type Cible = { produitId: number; champ: "stock" | "perte" };
+type Cible = { produitId: number; champ: "stock" | "cartons" | "unites" | "perte" };
+
+/** Cartons et unités tirés d'un stock enregistré. */
+const decouper = (l: LigneSaisie, stock: number | null, stockColis: number | null) => {
+  if (!l.parCarton || stock === null) return { cartons: null, unites: null };
+  if (stockColis === null) return { cartons: null, unites: stock };
+  const unites = Math.round((stock - stockColis * l.fact) * 1000) / 1000;
+  return { cartons: stockColis, unites };
+};
+
+/** Stock total d'une saisie en cartons + unités ; null si rien n'est tapé. */
+const totalCartons = (l: LigneSaisie, cartons: number | null, unites: number | null) =>
+  cartons === null && unites === null
+    ? null
+    : Math.round(((cartons ?? 0) * l.fact + (unites ?? 0)) * 1000) / 1000;
 
 // La fiabilité qualifie la régularité de la consommation, pas la quantité
 // d'historique : un produit relevé quinze fois peut rester imprévisible. Le
@@ -91,6 +113,7 @@ export default function Saisie({
   const etatInitial = useCallback(
     (l: LigneSaisie): Etat => ({
       stock: l.stock,
+      ...decouper(l, l.stock, l.stockColis),
       colis: l.colis,
       // Une quantité n'est tenue pour un choix du chef que si elle diffère de
       // ce que l'application proposait alors. Sans cette comparaison, rouvrir
@@ -122,8 +145,10 @@ export default function Saisie({
     for (const { corps, t } of Object.values(locales)) {
       const l = parProduit.get(Number(corps.produitId));
       if (!l || t <= l.majLe) continue;
+      const stock = (corps.stock as number | null) ?? null;
       suivant[l.produitId] = {
-        stock: (corps.stock as number | null) ?? null,
+        stock,
+        ...decouper(l, stock, (corps.stockColis as number | null) ?? null),
         colis: (corps.colis as number | null) ?? null,
         force: corps.force === true,
         perte: (corps.perte as number | null) ?? null,
@@ -207,6 +232,7 @@ export default function Saisie({
         consoPrevue: l.consoPrevue,
         perte: etat.perte,
         force: etat.force,
+        ...(l.parCarton ? { stockColis: etat.stock === null ? null : etat.cartons } : {}),
       }),
     [colisRetenu, propositionDe, session.id],
   );
@@ -216,6 +242,20 @@ export default function Saisie({
       const l = parProduit.get(produitId);
       if (!l || fige) return;
       const etat = { ...(etatsRef.current[produitId] ?? etatInitial(l)), ...patch };
+      if (l.parCarton) {
+        if ("cartons" in patch || "unites" in patch) {
+          etat.stock = totalCartons(l, etat.cartons, etat.unites);
+        } else if ("stock" in patch) {
+          // « Idem », « Aucun » : le stock se répartit en cartons pleins et reste.
+          if (etat.stock === null) {
+            etat.cartons = null;
+            etat.unites = null;
+          } else {
+            etat.cartons = Math.floor(etat.stock / l.fact);
+            etat.unites = Math.round((etat.stock - etat.cartons * l.fact) * 1000) / 1000;
+          }
+        }
+      }
       if (l.comptePour !== null) {
         etat.colis = null;
         etat.force = false;
@@ -257,11 +297,13 @@ export default function Saisie({
   const [fiche, setFiche] = useState<number | null>(null);
 
   const ouvrirPave = useCallback(
-    (produitId: number, champ: Cible["champ"] = "stock") => {
+    (produitId: number, demande: Cible["champ"] = "stock") => {
       if (fige) return;
       const e = etatsRef.current[produitId];
       const l = parProduit.get(produitId);
       if (!l) return;
+      // Saisie en cartons + unités : on commence par les cartons.
+      const champ = l.parCarton && demande === "stock" ? "cartons" : demande;
       // Une recherche en cours garde le clavier du téléphone ouvert : on le ferme.
       (document.activeElement as HTMLElement | null)?.blur?.();
       const f = frappeDe((e ?? etatInitial(l))[champ]);
@@ -293,7 +335,7 @@ export default function Saisie({
 
   // La ligne en cours de saisie reste visible au-dessus du pavé.
   useEffect(() => {
-    if (!cible || cible.champ !== "stock" || !hauteurPave) return;
+    if (!cible || cible.champ === "perte" || !hauteurPave) return;
     montrerLigne(
       document.querySelector(`[data-ligne="${cible.produitId}"]`),
       nav.current?.getBoundingClientRect().bottom ?? 0,
@@ -352,12 +394,17 @@ export default function Saisie({
   const zoneSuivante = indexZone >= 0 ? (zones[indexZone + 1] ?? null) : null;
 
   /** Produit suivant de la liste affichée, comme le suivant sur l'étagère. */
-  const suivant = () => {
+  const suivant = (produitSuivant = false) => {
     if (!cible) return;
     if (cible.champ === "perte") {
       // Retour à la fiche d'où l'on venait.
       setCible(null);
       setFiche(cible.produitId);
+      return;
+    }
+    // Des cartons on passe aux unités du même produit.
+    if (cible.champ === "cartons" && !produitSuivant) {
+      ouvrirPave(cible.produitId, "unites");
       return;
     }
     const i = visibles.findIndex((l) => l.produitId === cible.produitId);
@@ -389,7 +436,7 @@ export default function Saisie({
                 detail: `${qte(ligneCible.stockPrecedent)} ${ligneCible.unite ?? "u"}`,
                 action: () => {
                   modifier(ligneCible.produitId, { stock: ligneCible.stockPrecedent });
-                  suivant();
+                  suivant(true);
                 },
               }
             : null,
@@ -398,7 +445,7 @@ export default function Saisie({
             detail: "0 et suivant",
             action: () => {
               modifier(ligneCible.produitId, { stock: 0 });
-              suivant();
+              suivant(true);
             },
           },
         ];
@@ -564,7 +611,10 @@ export default function Saisie({
             </li>
             {visibles.map((l) => {
               const etat = etatDe(l);
-              const actif = cible?.produitId === l.produitId && cible.champ === "stock";
+              const actif =
+                cible?.produitId === l.produitId && cible.champ !== "perte"
+                  ? cible.champ
+                  : null;
               return (
                 <LigneProduit
                   key={l.produitId}
@@ -576,6 +626,7 @@ export default function Saisie({
                   zone={terme ? nomZone.get(l.zoneId) : undefined}
                   enAttente={envoi.cles.has(`releve:${session.id}:${l.produitId}`)}
                   frappe={actif ? frappe : null}
+                  champActif={actif}
                   onStock={ouvrirPave}
                   onFiche={ouvrirFiche}
                 />
@@ -641,6 +692,13 @@ export default function Saisie({
           detail={
             cible.champ === "perte"
               ? `En ${ligneCible.unite ?? "unités"}, depuis le dernier relevé`
+              : cible.champ === "cartons"
+                ? `Cartons pleins · 1 carton = ${qte(ligneCible.fact)} ${ligneCible.unite ?? "u"}`
+                : cible.champ === "unites"
+                  ? [
+                      `${ligneCible.unite ?? "Unités"} hors cartons`,
+                      `${qte(etatDe(ligneCible).cartons ?? 0)} carton${(etatDe(ligneCible).cartons ?? 0) > 1 ? "s" : ""} déjà saisi${(etatDe(ligneCible).cartons ?? 0) > 1 ? "s" : ""}`,
+                    ].join(" · ")
               : [
                   `Stock en ${ligneCible.unite ?? "unités"}`,
                   ligneCible.stockPrecedent !== null
@@ -657,7 +715,7 @@ export default function Saisie({
           raccourcis={raccourcis}
           libelleSuivant={cible.champ === "perte" ? "OK" : "Suivant"}
           onTouche={toucher}
-          onSuivant={suivant}
+          onSuivant={() => suivant()}
           onFermer={() => setCible(null)}
           onHauteur={setHauteurPave}
         />
@@ -703,6 +761,7 @@ const LigneProduit = memo(function LigneProduit({
   zone,
   enAttente,
   frappe,
+  champActif,
   onStock,
   onFiche,
 }: {
@@ -716,7 +775,9 @@ const LigneProduit = memo(function LigneProduit({
   enAttente: boolean;
   /** Frappe en cours quand le pavé remplit cette ligne. */
   frappe: Frappe | null;
-  onStock: (produitId: number) => void;
+  /** Case que le pavé remplit sur cette ligne. */
+  champActif: Cible["champ"] | null;
+  onStock: (produitId: number, champ?: Cible["champ"]) => void;
   onFiche: (produitId: number) => void;
 }) {
   const compte = etat.stock !== null;
@@ -780,41 +841,67 @@ const LigneProduit = memo(function LigneProduit({
           {enAttente ? <span className="text-ambre-700">sur le téléphone</span> : null}
         </span>
       </button>
-      {/* L'unité de comptage, juste devant le champ : kg, main, BTL… */}
-      <span
-        onClick={fige ? undefined : () => onStock(ligne.produitId)}
-        aria-hidden="true"
-        className={`flex w-12 shrink-0 items-center justify-end truncate pr-1.5 text-xs font-semibold ${
-          ligne.unite ? "text-neutre-600" : "text-neutre-300"
-        }`}
-      >
-        {ligne.unite ?? "u"}
-      </span>
-      <button
-        onClick={() => onStock(ligne.produitId)}
-        disabled={fige}
-        aria-label={`Stock de ${ligne.nom} en ${ligne.unite ?? "unités"} : ${compte ? qte(etat.stock) : "à relever"}`}
-        className={`my-1.5 flex min-h-12 w-[4.75rem] shrink-0 items-center justify-end rounded-xl border-2 px-2.5 text-lg font-semibold tabular-nums ${
-          actif
-            ? "border-rouge-700 bg-white"
-            : compte
-              ? "border-neutre-200 bg-white"
-              : "border-dashed border-neutre-300 bg-neutre-50 text-neutre-400"
-        } disabled:border-neutre-100 disabled:bg-neutre-50`}
-      >
-        {actif ? (
-          <>
-            <span className={frappe.neuf && frappe.texte ? "rounded bg-rouge-100" : ""}>
-              {frappe.texte}
-            </span>
-            <span className="curseur" aria-hidden="true" />
-          </>
-        ) : compte ? (
-          qte(etat.stock)
-        ) : (
-          "—"
-        )}
-      </button>
+      {ligne.parCarton ? (
+        // Deux cases : cartons pleins, puis unités entamées.
+        <div className="my-1.5 flex w-[7.75rem] shrink-0 gap-1">
+          <CaseStock
+            libelle="CRT"
+            valeur={etat.cartons}
+            compte={compte}
+            frappe={champActif === "cartons" ? frappe : null}
+            fige={fige}
+            aria={`Cartons de ${ligne.nom}`}
+            onClick={() => onStock(ligne.produitId, "cartons")}
+          />
+          <CaseStock
+            libelle={u}
+            valeur={etat.unites}
+            compte={compte}
+            frappe={champActif === "unites" ? frappe : null}
+            fige={fige}
+            aria={`${ligne.nom}, ${ligne.unite ?? "unités"} hors cartons`}
+            onClick={() => onStock(ligne.produitId, "unites")}
+          />
+        </div>
+      ) : (
+        <>
+          {/* L'unité de comptage, juste devant le champ : kg, main, BTL… */}
+          <span
+            onClick={fige ? undefined : () => onStock(ligne.produitId)}
+            aria-hidden="true"
+            className={`flex w-12 shrink-0 items-center justify-end truncate pr-1.5 text-xs font-semibold ${
+              ligne.unite ? "text-neutre-600" : "text-neutre-300"
+            }`}
+          >
+            {ligne.unite ?? "u"}
+          </span>
+          <button
+            onClick={() => onStock(ligne.produitId)}
+            disabled={fige}
+            aria-label={`Stock de ${ligne.nom} en ${ligne.unite ?? "unités"} : ${compte ? qte(etat.stock) : "à relever"}`}
+            className={`my-1.5 flex min-h-12 w-[4.75rem] shrink-0 items-center justify-end rounded-xl border-2 px-2.5 text-lg font-semibold tabular-nums ${
+              actif
+                ? "border-rouge-700 bg-white"
+                : compte
+                  ? "border-neutre-200 bg-white"
+                  : "border-dashed border-neutre-300 bg-neutre-50 text-neutre-400"
+            } disabled:border-neutre-100 disabled:bg-neutre-50`}
+          >
+            {actif ? (
+              <>
+                <span className={frappe.neuf && frappe.texte ? "rounded bg-rouge-100" : ""}>
+                  {frappe.texte}
+                </span>
+                <span className="curseur" aria-hidden="true" />
+              </>
+            ) : compte ? (
+              qte(etat.stock)
+            ) : (
+              "—"
+            )}
+          </button>
+        </>
+      )}
       <button
         onClick={() => onFiche(ligne.produitId)}
         aria-label={`Commande de ${ligne.nom} : ${colis} colis`}
@@ -831,6 +918,60 @@ const LigneProduit = memo(function LigneProduit({
     </li>
   );
 });
+
+/** Une des deux cases d'une saisie en cartons + unités. */
+function CaseStock({
+  libelle,
+  valeur,
+  compte,
+  frappe,
+  fige,
+  aria,
+  onClick,
+}: {
+  libelle: string;
+  valeur: number | null;
+  /** Le produit est relevé (l'autre case peut être restée vide : elle vaut 0). */
+  compte: boolean;
+  frappe: Frappe | null;
+  fige: boolean;
+  aria: string;
+  onClick: () => void;
+}) {
+  const actif = frappe !== null;
+  return (
+    <button
+      onClick={onClick}
+      disabled={fige}
+      aria-label={`${aria} : ${compte ? qte(valeur ?? 0) : "à relever"}`}
+      className={`flex min-h-12 min-w-0 flex-1 flex-col items-end justify-center rounded-xl border-2 px-1.5 leading-none tabular-nums ${
+        actif
+          ? "border-rouge-700 bg-white"
+          : compte
+            ? "border-neutre-200 bg-white"
+            : "border-dashed border-neutre-300 bg-neutre-50 text-neutre-400"
+      } disabled:border-neutre-100 disabled:bg-neutre-50`}
+    >
+      <span className="max-w-full truncate text-[10px] font-semibold uppercase text-neutre-500">
+        {libelle}
+      </span>
+      <span className="mt-1 text-lg font-semibold">
+        {actif ? (
+          <>
+            <span className={frappe.neuf && frappe.texte ? "rounded bg-rouge-100" : ""}>
+              {frappe.texte}
+            </span>
+            <span className="curseur" aria-hidden="true" />
+          </>
+        ) : compte ? (
+          qte(valeur ?? 0)
+        ) : (
+          "—"
+        )}
+      </span>
+    </button>
+  );
+}
 
 /**
  * Tout ce qui concerne un produit, au pouce : stock, commande, pertes,

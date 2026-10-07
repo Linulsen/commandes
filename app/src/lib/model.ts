@@ -139,6 +139,7 @@ export async function getCommande(sessionId: number) {
       conso_manuelle: brut.ligne.conso_manuelle ?? null,
       note: brut.ligne.note ?? null,
       perte: brut.ligne.perte ?? null,
+      stock_colis: brut.ligne.stock_colis ?? null,
       maj_le: brut.ligne.maj_le ?? null,
     };
     const ajout = rattache.get(produit.id);
