@@ -4,26 +4,37 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LieuRangement, ProduitRangement } from "@/lib/rangement";
 import { alphabetique } from "@/lib/tri-commun";
+import CodeResponsable from "../CodeResponsable";
 
 /**
  * Réglage de l'ordre de rangement d'un lieu, au téléphone : on touche un
  * produit pour le prendre, puis l'endroit où le poser ; les flèches l'ajustent
  * d'une place. Rien n'est enregistré avant « Enregistrer ».
+ *
+ * L'ordre est le même pour tout le monde : le modifier demande le code
+ * responsable. Sans lui, la liste se consulte seulement.
  */
 export default function Rangement({
   lieux,
   lieuId,
   produits,
+  deverrouille: deverrouilleInitial,
 }: {
   lieux: LieuRangement[];
   lieuId: number;
   produits: ProduitRangement[];
+  /** Session responsable déjà ouverte sur cet appareil. */
+  deverrouille: boolean;
 }) {
   const router = useRouter();
   const [liste, setListe] = useState(produits);
   const [enregistre, setEnregistre] = useState(() => produits.map((p) => p.id).join(","));
   const [pris, setPris] = useState<number | null>(null);
   const [etat, setEtat] = useState<"" | "envoi" | "ok" | string>("");
+  const [deverrouille, setDeverrouille] = useState(deverrouilleInitial);
+  // La session responsable a expiré pendant le réglage : les changements sont
+  // gardés, on redemande le code avant d'enregistrer.
+  const [expire, setExpire] = useState(false);
 
   const modifie = liste.map((p) => p.id).join(",") !== enregistre;
   const nonPlaces = useMemo(() => liste.filter((p) => p.rang === null).length, [liste]);
@@ -49,6 +60,7 @@ export default function Rangement({
   };
 
   const toucher = (id: number, index: number) => {
+    if (!deverrouille) return;
     if (pris === null) setPris(id);
     else if (pris === id) setPris(null);
     else deplacer(pris, index);
@@ -78,7 +90,16 @@ export default function Rangement({
       setEtat("ok");
       router.refresh();
     } else {
-      const corps = (await r?.json().catch(() => null)) as { erreur?: string } | null;
+      const corps = (await r?.json().catch(() => null)) as
+        | { erreur?: string; besoinCode?: boolean }
+        | null;
+      if (corps?.besoinCode) {
+        setDeverrouille(false);
+        setExpire(true);
+        setEtat("");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
       setEtat(corps?.erreur ?? "Non enregistré : vérifiez le réseau et réessayez.");
     }
   };
@@ -111,15 +132,30 @@ export default function Rangement({
         className="mx-auto max-w-2xl px-4 py-3"
         style={{ paddingBottom: "calc(5.5rem + env(safe-area-inset-bottom))" }}
       >
-        <p className="mb-2 px-1 text-sm text-neutre-700">
-          Touchez un produit pour le prendre, puis touchez la ligne où le poser. Les flèches le
-          déplacent d’une place. Pensez à enregistrer.
-        </p>
+        {deverrouille ? (
+          <p className="mb-2 px-1 text-sm text-neutre-700">
+            Touchez un produit pour le prendre, puis touchez la ligne où le poser. Les flèches le
+            déplacent d’une place. Pensez à enregistrer.
+          </p>
+        ) : (
+          <CodeResponsable
+            message={
+              expire
+                ? "La session responsable a expiré. Vos changements sont gardés : retapez le code, puis enregistrez."
+                : "L’ordre de rangement est le même pour tout le monde. Pour le modifier, tapez le code responsable."
+            }
+            onOk={() => {
+              setDeverrouille(true);
+              setExpire(false);
+            }}
+          />
+        )}
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1 text-sm">
           <span className="text-neutre-500">
             {liste.length} produit{liste.length > 1 ? "s" : ""} · {nomLieu}
             {nonPlaces ? ` · ${nonPlaces} à placer` : ""}
           </span>
+          {deverrouille ? (
           <button
             onClick={() => {
               setListe((l) => [...l].sort((a, b) => alphabetique(a.nom, b.nom)));
@@ -130,6 +166,7 @@ export default function Rangement({
           >
             Repartir de A → Z
           </button>
+          ) : null}
         </div>
 
         {liste.length === 0 ? (
@@ -208,6 +245,7 @@ export default function Rangement({
         )}
       </div>
 
+      {deverrouille || modifie ? (
       <footer
         className="fixed inset-x-0 bottom-0 z-10 border-t border-neutre-100 bg-white/95 backdrop-blur"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
@@ -246,13 +284,14 @@ export default function Rangement({
           ) : null}
           <button
             onClick={enregistrer}
-            disabled={(!modifie && nonPlaces === 0) || etat === "envoi"}
+            disabled={!deverrouille || (!modifie && nonPlaces === 0) || etat === "envoi"}
             className="min-h-12 shrink-0 rounded-xl bg-rouge-700 px-4 font-titre text-sm font-semibold text-white disabled:bg-neutre-200 disabled:text-neutre-500"
           >
             Enregistrer
           </button>
         </div>
       </footer>
+      ) : null}
     </>
   );
 }

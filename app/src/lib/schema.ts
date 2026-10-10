@@ -89,6 +89,7 @@ export type Database = {
         Returns: CommandeRpc;
       };
       app_verifier_code_admin: { Args: ArgsCode & { p_code: string }; Returns: string };
+      app_verifier_code_responsable: { Args: ArgsCode & { p_code: string }; Returns: string };
       app_creer_code_admin: {
         Args: ArgsCode & { p_code_responsable: string; p_nouveau: string };
         Returns: string;
