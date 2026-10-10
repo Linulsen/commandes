@@ -214,6 +214,15 @@ export default async function Accueil() {
         ) : null}
 
         <Link
+          href="/rangement"
+          className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-1 text-sm text-neutre-500"
+        >
+          <span aria-hidden="true">↕</span>
+          <span className="underline decoration-neutre-200 underline-offset-4">
+            Ordre de rangement des chambres
+          </span>
+        </Link>
+        <Link
           href="/admin/appareils"
           className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-1 text-sm text-neutre-500"
         >

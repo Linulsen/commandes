@@ -13,14 +13,19 @@ import {
   vider,
 } from "@/lib/file-attente";
 import { useEcranAllume } from "@/lib/ecran";
+import { useTri } from "@/lib/tri";
+import { comparer } from "@/lib/tri-commun";
 import type { ReleveResume, Session, Zone } from "@/lib/types";
 import EtatEnvoi from "../../EtatEnvoi";
+import ChoixTri from "../../ChoixTri";
 import Pave, { frappeDe, frapper, montrerLigne, type Frappe, type Raccourci } from "../../Pave";
 
 export type LigneSaisie = {
   produitId: number;
   zoneId: number;
   nom: string;
+  /** Place dans l'ordre de rangement ; null : pas encore placé. */
+  rang: number | null;
   conditionnement: string | null;
   unite: string | null;
   fact: number;
@@ -383,10 +388,13 @@ export default function Saisie({
     .map((l) => ({ l, colis: colisRetenu(l, etatDe(l)), etat: etatDe(l) }))
     .filter((x) => x.colis > 0);
 
+  const [tri, setTri] = useTri();
+  const lignesTriees = useMemo(() => [...lignes].sort(comparer(tri)), [lignes, tri]);
+
   const terme = recherche ? normaliser(recherche.trim()) : "";
   const visibles = terme
-    ? lignes.filter((l) => normaliser(l.nom).includes(terme))
-    : lignes.filter(
+    ? lignesTriees.filter((l) => normaliser(l.nom).includes(terme))
+    : lignesTriees.filter(
         (l) => l.zoneId === onglet && (!resteSeul || !masques.has(l.produitId)),
       );
 
@@ -593,7 +601,13 @@ export default function Saisie({
               else setEchec("Réouverture impossible (réseau ?)");
             }}
           />
-        ) : visibles.length === 0 ? (
+        ) : null}
+
+        {onglet !== "recap" && !terme ? (
+          <ChoixTri tri={tri} onTri={setTri} lieuId={onglet} />
+        ) : null}
+
+        {onglet === "recap" ? null : visibles.length === 0 ? (
           <p className="rounded-2xl border border-neutre-100 bg-white p-4 text-sm text-neutre-500">
             {terme
               ? "Aucun produit ne porte ce nom."

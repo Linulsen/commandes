@@ -28,6 +28,13 @@ export type Produit = {
   fact: number;
   actif: boolean;
   ordre: number;
+  /** Lieu d'inventaire, quand la chambre de commande n'est pas un lieu réel. */
+  lieu_id?: number | null;
+  /**
+   * Place dans l'ordre de rangement : (ordre du lieu + 1) × 1000 + position.
+   * Null : pas encore placé.
+   */
+  rang?: number | null;
   /**
    * Ligne de comptage seulement : le produit que ce stock complète. Elle n'est
    * jamais commandée ; son stock, multiplié par `equivalence`, s'ajoute à

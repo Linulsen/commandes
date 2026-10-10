@@ -46,6 +46,7 @@ export default async function Commande({
           produitId: l.produit.id,
           zoneId: l.zone.id,
           nom: l.produit.nom,
+          rang: l.produit.rang ?? null,
           conditionnement: l.produit.conditionnement,
           unite: l.produit.unite,
           fact: Number(l.produit.fact),

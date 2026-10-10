@@ -5,8 +5,11 @@ import Link from "next/link";
 import { normaliser, qte } from "@/lib/format";
 import { lireNombre, mettreEnFile, saisiesLocales, useFileAttente } from "@/lib/file-attente";
 import { useEcranAllume } from "@/lib/ecran";
+import { useTri } from "@/lib/tri";
+import { comparer } from "@/lib/tri-commun";
 import type { Lieu, LigneInventaire, ProduitCatalogue, SaisieServeur } from "@/lib/inventaire";
 import EtatEnvoi from "../../EtatEnvoi";
+import ChoixTri from "../../ChoixTri";
 import Pave, { frapper, montrerLigne, type Frappe, type Raccourci } from "../../Pave";
 
 /**
@@ -96,14 +99,12 @@ export default function Comptage({
 
   // Articles ajoutés à un lieu pendant cette visite (trouvés là sans y être attendus).
   const [ajoutees, setAjoutees] = useState<LigneInventaire[]>([]);
+  // Ordre alphabétique, ou ordre de rangement dans la chambre (choix gardé
+  // dans le téléphone, le même qu'au relevé).
+  const [tri, setTri] = useTri();
   const lignes = useMemo(
-    () =>
-      ajoutees.length
-        ? [...lignesInitiales, ...ajoutees].sort((a, b) =>
-            a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" }),
-          )
-        : lignesInitiales,
-    [ajoutees, lignesInitiales],
+    () => [...lignesInitiales, ...ajoutees].sort(comparer(tri)),
+    [ajoutees, lignesInitiales, tri],
   );
   const avecLignes = useMemo(
     () => lieux.filter((z) => lignes.some((l) => l.zoneId === z.id)),
@@ -301,6 +302,7 @@ export default function Comptage({
       produitId: p.produitId,
       zoneId: onglet,
       nom: p.nom,
+      rang: p.rang,
       conditionnement: p.conditionnement,
       unite: p.unite,
       fact: p.fact,
@@ -497,6 +499,8 @@ export default function Comptage({
             : "calc(var(--barre-basse) + env(safe-area-inset-bottom) + 1rem)",
         }}
       >
+        {!terme ? <ChoixTri tri={tri} onTri={setTri} lieuId={onglet} /> : null}
+
         {visibles.length === 0 ? (
           <p className="rounded-2xl border border-neutre-100 bg-white p-4 text-sm text-neutre-500">
             {terme

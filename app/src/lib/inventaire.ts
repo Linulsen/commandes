@@ -33,6 +33,8 @@ export type LigneInventaire = {
   produitId: number;
   zoneId: number;
   nom: string;
+  /** Place dans l'ordre de rangement ; null : pas encore placé. */
+  rang: number | null;
   conditionnement: string | null;
   unite: string | null;
   fact: number;
@@ -54,6 +56,7 @@ export type LigneInventaire = {
 export type ProduitCatalogue = {
   produitId: number;
   nom: string;
+  rang: number | null;
   conditionnement: string | null;
   unite: string | null;
   fact: number;
@@ -87,10 +90,11 @@ type ProduitInv = {
   contenance: number | null;
   unite_contenance: "kg" | "L" | null;
   saisie_detail: boolean;
+  rang: number | null;
 };
 
 const COLONNES_PRODUIT =
-  "id,zone_id,lieu_id,nom,conditionnement,unite,fact,actif,contenance,unite_contenance,saisie_detail";
+  "id,zone_id,lieu_id,nom,conditionnement,unite,fact,actif,contenance,unite_contenance,saisie_detail,rang";
 
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
@@ -240,6 +244,7 @@ export async function getInventaire(id: number) {
       produitId,
       zoneId,
       nom: p.nom,
+      rang: p.rang ?? null,
       conditionnement: p.conditionnement,
       unite: p.unite,
       fact: Number(p.fact),
@@ -277,6 +282,7 @@ export async function getInventaire(id: number) {
     .map((p) => ({
       produitId: p.id,
       nom: p.nom,
+      rang: p.rang ?? null,
       conditionnement: p.conditionnement,
       unite: p.unite,
       fact: Number(p.fact),
