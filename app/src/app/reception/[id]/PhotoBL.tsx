@@ -42,6 +42,7 @@ export default function PhotoBL({
   uniteDe,
   commandes,
   onAppliquer,
+  onAConfirmer,
 }: {
   receptionId: number;
   /** Dépannage : ticket de caisse, quantités en unités de stock. */
@@ -51,6 +52,8 @@ export default function PhotoBL({
   /** Produits commandés : id → colis commandés. */
   commandes: Map<number, number>;
   onAppliquer: (quantites: QuantiteLue[], lecture: LectureBL) => void;
+  /** Nombre de lignes en doute pas encore tranchées (la validation attend). */
+  onAConfirmer?: (n: number) => void;
 }) {
   const doc = depannage ? "ticket" : "bon";
   const enUnites = (pid: number, q: number) =>
@@ -61,6 +64,43 @@ export default function PhotoBL({
   const [lecture, setLecture] = useState<LectureBL | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  /**
+   * Lignes en doute : n° de ligne → produit choisi (0 = aucun des produits
+   * proposés). Une ligne absente d'ici attend encore la réponse.
+   */
+  const [choix, setChoix] = useState<Record<number, number>>({});
+
+  const enAttente = (l: LectureBL | null, c: Record<number, number>) =>
+    l?.lisible
+      ? l.lignes.filter((ligne, i) => ligne.candidats?.length && c[i] === undefined).length
+      : 0;
+
+  /** Quantité totale d'un produit : lignes reconnues + lignes en doute attribuées. */
+  const totalPour = (l: LectureBL, c: Record<number, number>, pid: number) =>
+    l.lignes.reduce(
+      (s, ligne, i) =>
+        ligne.produit_id === pid || (ligne.candidats?.length && c[i] === pid)
+          ? s + ligne.quantite
+          : s,
+      0,
+    );
+
+  const choisir = (i: number, pid: number) => {
+    if (!lecture) return;
+    const avant = choix[i];
+    const nouveau = { ...choix, [i]: pid };
+    setChoix(nouveau);
+    // On recalcule le produit choisi et, en cas de changement d'avis, l'ancien.
+    const touches = [pid, avant].filter((p): p is number => p !== undefined && p > 0);
+    onAppliquer(
+      [...new Set(touches)].map((produitId) => ({
+        produitId,
+        quantite: totalPour(lecture, nouveau, produitId),
+      })),
+      lecture,
+    );
+    onAConfirmer?.(enAttente(lecture, nouveau));
+  };
 
   const ajouter = async (fichiers: FileList | null) => {
     if (!fichiers?.length) return;
@@ -91,6 +131,8 @@ export default function PhotoBL({
     }
     const res = corps as LectureBL;
     setLecture(res);
+    setChoix({});
+    onAConfirmer?.(enAttente(res, {}));
     if (!res.lisible) return;
     const parProduit = new Map<number, number>();
     for (const l of res.lignes) {
@@ -109,6 +151,8 @@ export default function PhotoBL({
     for (const p of photos) URL.revokeObjectURL(p.url);
     setPhotos([]);
     setLecture(null);
+    setChoix({});
+    onAConfirmer?.(0);
     setErreur(null);
     setOuvert(false);
   };
@@ -143,16 +187,58 @@ export default function PhotoBL({
   // Résultat de la lecture.
   if (lecture) {
     const lu = new Map<number, number>();
-    for (const l of lecture.lignes)
-      if (l.produit_id !== null) lu.set(l.produit_id, (lu.get(l.produit_id) ?? 0) + l.quantite);
+    lecture.lignes.forEach((l, i) => {
+      const pid = l.produit_id ?? (l.candidats?.length && choix[i] > 0 ? choix[i] : null);
+      if (pid !== null) lu.set(pid, (lu.get(pid) ?? 0) + l.quantite);
+    });
     const ecarts = [...lu].filter(([pid, c]) => commandes.has(pid) && commandes.get(pid) !== c);
     const horsCommande = [...lu].filter(([pid]) => !commandes.has(pid));
     const absents = [...commandes.keys()].filter((pid) => !lu.has(pid));
-    const inconnues = lecture.lignes.filter((l) => l.produit_id === null);
+    const doutes = lecture.lignes
+      .map((l, i) => ({ l, i }))
+      .filter(({ l }) => l.produit_id === null && l.candidats?.length);
+    const inconnues = lecture.lignes.filter((l) => l.produit_id === null && !l.candidats?.length);
     const remarques = lecture.lignes.filter((l) => l.produit_id !== null && l.remarque);
+    const attente = enAttente(lecture, choix);
 
     return (
       <div className="space-y-3 rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
+        {lecture.lisible && doutes.length ? (
+          <div className="space-y-3 rounded-xl border border-ambre-100 bg-ambre-50 p-3">
+            <p className="text-sm font-semibold text-ambre-700">
+              {attente
+                ? `À confirmer : ${attente} ligne${attente > 1 ? "s" : ""} du ${doc} ${attente > 1 ? "peuvent" : "peut"} correspondre à plusieurs produits. Choisissez le bon.`
+                : "Lignes confirmées."}
+            </p>
+            {doutes.map(({ l, i }) => (
+              <div key={i} className="space-y-1.5">
+                <p className="text-sm">
+                  <strong>{l.libelle_bon}</strong> : {qte(l.quantite)}
+                  {depannage ? "" : " colis"}
+                  {l.remarque ? <span className="text-neutre-500"> · {l.remarque}</span> : null}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[...l.candidats!, 0].map((pid) => (
+                    <button
+                      key={pid}
+                      onClick={() => choisir(i, pid)}
+                      aria-pressed={choix[i] === pid}
+                      className={`min-h-11 rounded-xl px-3 text-left text-sm font-semibold ${
+                        choix[i] === pid
+                          ? "bg-neutre-900 text-white"
+                          : "border border-neutre-200 bg-white text-neutre-700"
+                      }`}
+                    >
+                      {pid
+                        ? `${nomDe(pid)}${depannage ? ` (${qte(l.quantite)} ${uniteDe(pid)})` : ""}`
+                        : "Aucun de ces produits"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {!lecture.lisible ? (
           <p className="text-sm font-semibold text-rouge-700">
             Le {doc} n’a pas pu être lu (photo floue, coupée ou mal éclairée). Reprenez la photo
@@ -224,9 +310,10 @@ export default function PhotoBL({
         )}
         <button
           onClick={fermer}
-          className="min-h-11 w-full rounded-xl border border-neutre-200 px-4 text-sm font-semibold text-neutre-700"
+          disabled={attente > 0}
+          className="min-h-11 w-full rounded-xl border border-neutre-200 px-4 text-sm font-semibold text-neutre-700 disabled:opacity-35"
         >
-          Fermer
+          {attente > 0 ? "Fermer (répondez d’abord aux lignes à confirmer)" : "Fermer"}
         </button>
       </div>
     );

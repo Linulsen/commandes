@@ -71,6 +71,7 @@ export async function POST(
           pages: images.length,
           lignes: lecture.lignes.length,
           reconnues: lecture.lignes.filter((l) => l.produit_id !== null).length,
+          a_confirmer: lecture.lignes.filter((l) => l.candidats?.length).length,
           jetons_entree: lecture.usage?.entree ?? null,
           jetons_sortie: lecture.usage?.sortie ?? null,
         },

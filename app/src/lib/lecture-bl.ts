@@ -30,6 +30,11 @@ export type LigneLue = {
   /** Colis pour une livraison, unités de stock pour un dépannage. */
   quantite: number;
   remarque?: string;
+  /**
+   * Doute entre plusieurs produits (frais / surgelé, deux formats…) : leurs id.
+   * La ligne n'est alors reportée nulle part : la personne choisit à l'écran.
+   */
+  candidats?: number[];
 };
 
 export type LectureBL = {
@@ -67,7 +72,13 @@ const outil = (mode: ModeLecture) => ({
             produit_id: {
               type: ["integer", "null"],
               description:
-                "id du produit de la liste qui correspond à cette ligne, ou null si aucun ne correspond avec certitude.",
+                "id du produit de la liste qui correspond à cette ligne, ou null si aucun ne correspond avec certitude OU si plusieurs pourraient correspondre.",
+            },
+            candidats: {
+              type: "array",
+              items: { type: "integer" },
+              description:
+                "Si plusieurs produits de la liste pourraient correspondre à cette ligne (ex. frais ou surgelé, deux formats, deux marques) : leurs id (2 à 4), et produit_id à null. Sinon omettre.",
             },
             libelle_bon: { type: "string", description: "Libellé tel qu'écrit sur le document." },
             quantite: {
@@ -117,6 +128,9 @@ function consigneFournisseur(fournisseur: string) {
   return "";
 }
 
+/** Règle demandée par Nicolas : en cas de doute, on pose la question. */
+const CONSIGNE_DOUTE = `- EN CAS DE DOUTE, NE CHOISIS PAS : si la ligne peut correspondre à plusieurs produits de la liste (par exemple « burrata » sans préciser frais ou surgelé, deux formats, deux marques proches), mets produit_id à null et liste leurs id dans « candidats ». La personne choisira à l'écran. Explique le doute en quelques mots dans « remarque ».`;
+
 export async function lireBonDeLivraison(
   images: ImageBL[],
   produits: ProduitALire[],
@@ -141,7 +155,8 @@ ${listeProduits(produits, mode)}
 
 Consignes :
 - Relève chaque ligne de produit du document (pas les totaux, la TVA, les consignes de palettes, les frais de port).
-- Associe chaque ligne au produit de la liste qui correspond, d'après le libellé, la marque, le poids ou le format. Les libellés du fournisseur sont souvent abrégés. Privilégie les produits commandés en cas d'hésitation. Si aucun ne correspond avec une bonne certitude, mets produit_id à null.
+- Associe chaque ligne au produit de la liste qui correspond, d'après le libellé, la marque, le poids ou le format. Les libellés du fournisseur sont souvent abrégés. Si aucun ne correspond avec une bonne certitude, mets produit_id à null.
+${CONSIGNE_DOUTE} Exception : si un seul des produits possibles a été commandé, c'est lui ; indique-le dans « remarque ».
 - Donne la quantité LIVRÉE en colis de l'appli. Si le document compte autrement (pièces, kg, cartons de taille différente), convertis avec « 1 colis = … » et explique la conversion dans « remarque ».
 ${consigneFournisseur(fournisseur)}- Si la quantité livrée diffère de la quantité commandée, ne la corrige pas : écris ce qui est sur le document.
 - Si un même produit apparaît sur plusieurs lignes, fais une entrée par ligne.
@@ -157,6 +172,7 @@ ${listeProduits(produits, mode)}
 Consignes :
 - Relève chaque article acheté (pas les totaux, la TVA, les consignes, les remises, les sacs).
 - Associe chaque article au produit de la liste qui correspond, d'après le libellé, la marque, le poids ou le format. Les libellés des tickets sont très abrégés. Si aucun ne correspond avec une bonne certitude, mets produit_id à null.
+${CONSIGNE_DOUTE}
 - Donne la quantité achetée dans l'UNITÉ DE STOCK du produit de l'appli (« compté en … ») : par exemple 2 cartons de 6 bouteilles comptées en bouteilles = 12 ; 3 barquettes de 500 g comptées en kg = 1,5. Explique toute conversion dans « remarque ».
 - Si la quantité est un poids ou un nombre de pièces impossible à convertir avec certitude, mets ta meilleure estimation et signale-le dans « remarque ».
 - Dans « fournisseur », mets l'enseigne ou le vendeur (ex. « Metro »).
@@ -232,12 +248,24 @@ Réponds uniquement en appelant l'outil « bon_de_livraison », une seule fois, 
     .map((l) => {
       const quantite = Number(l?.quantite);
       const pid = Number(l?.produit_id);
+      // Produits possibles, s'il y a un doute : seulement des id connus, sans doublon.
+      const candidats = [
+        ...new Set(
+          (Array.isArray(l?.candidats) ? l.candidats : [])
+            .map(Number)
+            .filter((c) => Number.isInteger(c) && ids.has(c)),
+        ),
+      ].slice(0, 4);
+      // Un doute signalé l'emporte : on ne reporte pas un produit choisi au hasard.
+      const produit_id =
+        candidats.length > 1 ? null : Number.isInteger(pid) && ids.has(pid) ? pid : null;
       return {
-        produit_id: Number.isInteger(pid) && ids.has(pid) ? pid : null,
+        produit_id,
         libelle_bon: String(l?.libelle_bon ?? "").slice(0, 200),
         quantite:
           Number.isFinite(quantite) && quantite >= 0 ? Math.round(quantite * 1000) / 1000 : 0,
         ...(l?.remarque ? { remarque: String(l.remarque).slice(0, 300) } : {}),
+        ...(produit_id === null && candidats.length ? { candidats } : {}),
       };
     })
     .filter((l) => l.libelle_bon || l.produit_id !== null);

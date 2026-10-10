@@ -73,6 +73,8 @@ export default function SaisieReception({
   const [provenance, setProvenance] = useState(reception.provenance ?? "");
   const [echec, setEchec] = useState<string | null>(null);
   const [confirmer, setConfirmer] = useState(false);
+  /** Lignes du bon photographié en doute, pas encore tranchées. */
+  const [aConfirmer, setAConfirmer] = useState(0);
   useEcranAllume(!fige);
 
   const produit = useMemo(() => new Map(catalogue.map((p) => [p.id, p])), [catalogue]);
@@ -316,6 +318,7 @@ export default function SaisieReception({
               setCommandesSeules(true);
               setRecherche("");
             }}
+            onAConfirmer={setAConfirmer}
           />
         ) : null}
 
@@ -499,13 +502,20 @@ export default function SaisieReception({
                 : `${recus} reçu${recus > 1 ? "s" : ""} · ${manquants} manquant${manquants > 1 ? "s" : ""}`}
             </p>
             <p className="truncate text-xs text-neutre-500">
-              {echec ?? <EtatEnvoi etat={envoi} />}
+              {echec ??
+                (aConfirmer > 0 ? (
+                  <span className="font-semibold text-ambre-700">
+                    {aConfirmer} ligne{aConfirmer > 1 ? "s" : ""} à confirmer
+                  </span>
+                ) : (
+                  <EtatEnvoi etat={envoi} />
+                ))}
             </p>
           </div>
           {!fige ? (
             <button
               onClick={() => (manquants > 0 && !depannage ? setConfirmer(true) : valider())}
-              disabled={recus === 0}
+              disabled={recus === 0 || aConfirmer > 0}
               className="min-h-12 shrink-0 rounded-xl bg-vert-700 px-4 font-titre text-sm font-semibold text-white disabled:opacity-35"
             >
               Valider
