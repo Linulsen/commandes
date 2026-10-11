@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LieuRangement, ProduitRangement } from "@/lib/rangement";
+import { normaliser } from "@/lib/format";
 import { alphabetique } from "@/lib/tri-commun";
 import CodeResponsable from "../CodeResponsable";
 
 /**
- * Réglage de l'ordre de rangement d'un lieu, au téléphone : on touche un
- * produit pour le prendre, puis l'endroit où le poser ; les flèches l'ajustent
- * d'une place. Rien n'est enregistré avant « Enregistrer ».
+ * Réglage de l'ordre de rangement d'un lieu, en parcourant les étagères
+ * (méthode demandée par Nicolas le 11/10/2026) : on se place sur une
+ * position (la 1 au départ), on cherche un article par son nom, on le
+ * touche. Il prend cette place, les suivants se décalent d'un cran, et le
+ * curseur passe tout seul à la place suivante. Toucher une ligne de la liste
+ * y replace le curseur. Rien n'est enregistré avant « Enregistrer ».
  *
  * L'ordre est le même pour tout le monde : le modifier demande le code
  * responsable. Sans lui, la liste se consulte seulement.
@@ -29,12 +33,21 @@ export default function Rangement({
   const router = useRouter();
   const [liste, setListe] = useState(produits);
   const [enregistre, setEnregistre] = useState(() => produits.map((p) => p.id).join(","));
-  const [pris, setPris] = useState<number | null>(null);
   const [etat, setEtat] = useState<"" | "envoi" | "ok" | string>("");
   const [deverrouille, setDeverrouille] = useState(deverrouilleInitial);
   // La session responsable a expiré pendant le réglage : les changements sont
   // gardés, on redemande le code avant d'enregistrer.
   const [expire, setExpire] = useState(false);
+
+  // Curseur : le prochain article choisi se met juste avant la ligne n°
+  // curseur + 1 (curseur = liste.length : en fin de liste).
+  const [curseur, setCurseur] = useState(0);
+  const [recherche, setRecherche] = useState("");
+  // Dernier article placé, surligné un instant pour suivre ce qui bouge.
+  const [dernier, setDernier] = useState<number | null>(null);
+  const champ = useRef<HTMLInputElement>(null);
+  const repere = useRef<HTMLLIElement>(null);
+  const suivreCurseur = useRef(false);
 
   const modifie = liste.map((p) => p.id).join(",") !== enregistre;
   const nonPlaces = useMemo(() => liste.filter((p) => p.rang === null).length, [liste]);
@@ -47,23 +60,51 @@ export default function Rangement({
     return () => window.removeEventListener("beforeunload", retenir);
   }, [modifie]);
 
-  const deplacer = (id: number, vers: number) => {
-    setListe((l) => {
-      const de = l.findIndex((p) => p.id === id);
-      if (de < 0 || vers < 0 || vers >= l.length || vers === de) return l;
-      const copie = [...l];
+  // Après un placement, le repère du curseur reste visible sous la recherche.
+  useEffect(() => {
+    if (!suivreCurseur.current) return;
+    suivreCurseur.current = false;
+    repere.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [curseur, liste]);
+
+  const terme = normaliser(recherche.trim());
+  const position = useMemo(() => new Map(liste.map((p, i) => [p.id, i])), [liste]);
+  const resultats = useMemo(
+    () =>
+      terme
+        ? liste
+            .filter((p) => normaliser(p.nom).includes(terme))
+            .sort((a, b) => alphabetique(a.nom, b.nom))
+            .slice(0, 8)
+        : [],
+    [liste, terme],
+  );
+
+  /** Met l'article à la place du curseur ; les suivants se décalent d'un cran. */
+  const placer = (id: number) => {
+    const de = position.get(id);
+    if (de === undefined) return;
+    // Un article situé avant le curseur libère sa place : le curseur recule d'un cran.
+    const vers = de < curseur ? curseur - 1 : curseur;
+    if (de !== vers) {
+      const copie = [...liste];
       const [p] = copie.splice(de, 1);
       copie.splice(vers, 0, p);
-      return copie;
-    });
+      setListe(copie);
+    }
+    suivreCurseur.current = true;
+    setCurseur(Math.min(vers + 1, liste.length));
+    setDernier(id);
+    setRecherche("");
     setEtat("");
+    champ.current?.focus();
   };
 
-  const toucher = (id: number, index: number) => {
+  const positionner = (i: number) => {
     if (!deverrouille) return;
-    if (pris === null) setPris(id);
-    else if (pris === id) setPris(null);
-    else deplacer(pris, index);
+    setCurseur(i);
+    setDernier(null);
+    champ.current?.focus({ preventScroll: true });
   };
 
   const changerLieu = (id: number) => {
@@ -76,7 +117,6 @@ export default function Rangement({
 
   const enregistrer = async () => {
     setEtat("envoi");
-    setPris(null);
     const ids = liste.map((p) => p.id);
     const r = await fetch("/api/rangement", {
       method: "POST",
@@ -104,7 +144,33 @@ export default function Rangement({
     }
   };
 
+  const annuler = () => {
+    const parId = new Map(produits.map((p) => [p.id, p]));
+    setListe(
+      enregistre
+        .split(",")
+        .map((id) => parId.get(Number(id)))
+        .filter((p): p is ProduitRangement => !!p),
+    );
+    setCurseur(0);
+    setDernier(null);
+    setRecherche("");
+    setEtat("");
+  };
+
   const nomLieu = lieux.find((l) => l.id === lieuId)?.nom ?? "";
+
+  /** Repère du curseur, glissé dans la liste à l'endroit où ira le prochain article. */
+  const repereCurseur = (
+    <li
+      ref={repere}
+      key="curseur"
+      className="flex items-center gap-2 border-b border-rouge-200 bg-rouge-50 px-3 py-2 text-sm font-semibold text-rouge-700"
+    >
+      <span aria-hidden="true">▸</span>
+      Place n° {curseur + 1} : le prochain article choisi se met ici
+    </li>
+  );
 
   return (
     <>
@@ -126,6 +192,50 @@ export default function Rangement({
             ))}
           </div>
         </div>
+
+        {deverrouille && liste.length ? (
+          <div className="mx-auto max-w-2xl px-4 pb-2">
+            <label className="mb-1 block px-1 font-titre text-sm font-semibold text-rouge-700">
+              Place n° {curseur + 1}
+              {curseur >= liste.length ? " (fin de liste)" : ""} : quel article ?
+            </label>
+            <input
+              ref={champ}
+              type="search"
+              value={recherche}
+              onChange={(e) => setRecherche(e.target.value)}
+              placeholder="Tapez une partie du nom"
+              enterKeyHint="search"
+              autoComplete="off"
+              className="min-h-11 w-full rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700"
+            />
+            {terme ? (
+              <ul className="mt-1.5 max-h-[45vh] overflow-y-auto rounded-xl border border-neutre-100 bg-white shadow-sm">
+                {resultats.length === 0 ? (
+                  <li className="px-3 py-3 text-sm text-neutre-500">
+                    Aucun article de {nomLieu} ne porte ce nom.
+                  </li>
+                ) : (
+                  resultats.map((p) => (
+                    <li key={p.id} className="border-b border-neutre-100 last:border-b-0">
+                      <button
+                        onClick={() => placer(p.id)}
+                        className="flex min-h-12 w-full items-center gap-3 px-3 py-2 text-left"
+                      >
+                        <span className="min-w-0 flex-1 font-titre text-[15px] font-semibold leading-snug">
+                          {p.nom}
+                        </span>
+                        <span className="shrink-0 text-xs text-neutre-500 tabular-nums">
+                          n° {(position.get(p.id) ?? 0) + 1}
+                        </span>
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
       </nav>
 
       <div
@@ -134,8 +244,9 @@ export default function Rangement({
       >
         {deverrouille ? (
           <p className="mb-2 px-1 text-sm text-neutre-700">
-            Touchez un produit pour le prendre, puis touchez la ligne où le poser. Les flèches le
-            déplacent d’une place. Pensez à enregistrer.
+            Cherchez l’article qui va à la place indiquée et touchez-le : il s’y met, les suivants
+            se décalent, et on passe à la place d’après. Touchez une ligne pour vous placer
+            ailleurs. Pensez à enregistrer.
           </p>
         ) : (
           <CodeResponsable
@@ -156,16 +267,17 @@ export default function Rangement({
             {nonPlaces ? ` · ${nonPlaces} à placer` : ""}
           </span>
           {deverrouille ? (
-          <button
-            onClick={() => {
-              setListe((l) => [...l].sort((a, b) => alphabetique(a.nom, b.nom)));
-              setPris(null);
-              setEtat("");
-            }}
-            className="min-h-9 rounded-lg px-1 text-neutre-500 underline decoration-neutre-200 underline-offset-4"
-          >
-            Repartir de A → Z
-          </button>
+            <button
+              onClick={() => {
+                setListe((l) => [...l].sort((a, b) => alphabetique(a.nom, b.nom)));
+                setCurseur(0);
+                setDernier(null);
+                setEtat("");
+              }}
+              className="min-h-9 rounded-lg px-1 text-neutre-500 underline decoration-neutre-200 underline-offset-4"
+            >
+              Repartir de A → Z
+            </button>
           ) : null}
         </div>
 
@@ -175,34 +287,28 @@ export default function Rangement({
           </p>
         ) : (
           <ol className="overflow-hidden rounded-2xl border border-neutre-100 bg-white shadow-sm">
-            {liste.map((p, i) => {
-              const estPris = pris === p.id;
-              const cible = pris !== null && !estPris;
-              return (
+            {liste.flatMap((p, i) => {
+              const ligne = (
                 <li
                   key={p.id}
-                  className={`flex items-center gap-2 border-b border-neutre-100 last:border-b-0 ${
-                    estPris ? "bg-rouge-50" : ""
+                  className={`border-b border-neutre-100 last:border-b-0 ${
+                    dernier === p.id ? "bg-vert-50" : ""
                   }`}
                 >
                   <button
-                    onClick={() => toucher(p.id, i)}
-                    aria-pressed={estPris}
-                    className="flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2 pl-3 text-left"
+                    onClick={() => positionner(i)}
+                    disabled={!deverrouille}
+                    className="flex min-h-14 w-full items-center gap-3 py-2 pl-3 pr-3 text-left disabled:cursor-default"
                   >
                     <span
                       className={`w-7 shrink-0 text-right text-sm tabular-nums ${
-                        estPris ? "font-bold text-rouge-700" : "text-neutre-400"
+                        dernier === p.id ? "font-bold text-vert-700" : "text-neutre-400"
                       }`}
                     >
                       {i + 1}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span
-                        className={`line-clamp-2 font-titre text-[15px] font-semibold leading-snug ${
-                          estPris ? "text-rouge-800" : ""
-                        }`}
-                      >
+                      <span className="line-clamp-2 font-titre text-[15px] font-semibold leading-snug">
                         {p.nom}
                       </span>
                       <span className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-neutre-500">
@@ -214,83 +320,69 @@ export default function Rangement({
                             à placer
                           </span>
                         ) : null}
-                        {cible ? <span className="text-rouge-700">poser ici</span> : null}
                       </span>
                     </span>
                   </button>
-                  {estPris ? (
-                    <span className="flex shrink-0 gap-1 pr-2">
-                      <button
-                        onClick={() => deplacer(p.id, i - 1)}
-                        disabled={i === 0}
-                        aria-label="Monter d’une place"
-                        className="flex min-h-11 w-11 items-center justify-center rounded-xl border border-neutre-200 bg-white text-lg disabled:opacity-30"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        onClick={() => deplacer(p.id, i + 1)}
-                        disabled={i === liste.length - 1}
-                        aria-label="Descendre d’une place"
-                        className="flex min-h-11 w-11 items-center justify-center rounded-xl border border-neutre-200 bg-white text-lg disabled:opacity-30"
-                      >
-                        ↓
-                      </button>
-                    </span>
-                  ) : null}
                 </li>
               );
+              return deverrouille && i === curseur ? [repereCurseur, ligne] : [ligne];
             })}
+            {deverrouille ? (
+              curseur >= liste.length ? (
+                repereCurseur
+              ) : (
+                <li key="fin">
+                  <button
+                    onClick={() => positionner(liste.length)}
+                    className="flex min-h-12 w-full items-center px-3 text-sm text-neutre-500 underline decoration-neutre-200 underline-offset-4"
+                  >
+                    Se placer en fin de liste
+                  </button>
+                </li>
+              )
+            ) : null}
           </ol>
         )}
       </div>
 
       {deverrouille || modifie ? (
-      <footer
-        className="fixed inset-x-0 bottom-0 z-10 border-t border-neutre-100 bg-white/95 backdrop-blur"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-2.5">
-          <p className="min-w-0 flex-1 text-sm text-neutre-700">
-            {etat === "envoi"
-              ? "Enregistrement…"
-              : etat === "ok"
-                ? "Ordre enregistré."
-                : etat
-                  ? <span className="text-rouge-700">{etat}</span>
-                  : modifie
-                    ? "Modifications non enregistrées"
-                    : nonPlaces
-                      ? "Pas encore enregistré pour ce lieu"
-                      : "Aucune modification"}
-          </p>
-          {modifie ? (
+        <footer
+          className="fixed inset-x-0 bottom-0 z-10 border-t border-neutre-100 bg-white/95 backdrop-blur"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-2.5">
+            <p className="min-w-0 flex-1 text-sm text-neutre-700">
+              {etat === "envoi" ? (
+                "Enregistrement…"
+              ) : etat === "ok" ? (
+                "Ordre enregistré."
+              ) : etat ? (
+                <span className="text-rouge-700">{etat}</span>
+              ) : modifie ? (
+                "Modifications non enregistrées"
+              ) : nonPlaces ? (
+                "Pas encore enregistré pour ce lieu"
+              ) : (
+                "Aucune modification"
+              )}
+            </p>
+            {modifie ? (
+              <button
+                onClick={annuler}
+                className="min-h-12 shrink-0 rounded-xl border border-neutre-200 px-3 font-titre text-sm font-semibold text-neutre-700"
+              >
+                Annuler
+              </button>
+            ) : null}
             <button
-              onClick={() => {
-                const parId = new Map(produits.map((p) => [p.id, p]));
-                setListe(
-                  enregistre
-                    .split(",")
-                    .map((id) => parId.get(Number(id)))
-                    .filter((p): p is ProduitRangement => !!p),
-                );
-                setPris(null);
-                setEtat("");
-              }}
-              className="min-h-12 shrink-0 rounded-xl border border-neutre-200 px-3 font-titre text-sm font-semibold text-neutre-700"
+              onClick={enregistrer}
+              disabled={!deverrouille || (!modifie && nonPlaces === 0) || etat === "envoi"}
+              className="min-h-12 shrink-0 rounded-xl bg-rouge-700 px-4 font-titre text-sm font-semibold text-white disabled:bg-neutre-200 disabled:text-neutre-500"
             >
-              Annuler
+              Enregistrer
             </button>
-          ) : null}
-          <button
-            onClick={enregistrer}
-            disabled={!deverrouille || (!modifie && nonPlaces === 0) || etat === "envoi"}
-            className="min-h-12 shrink-0 rounded-xl bg-rouge-700 px-4 font-titre text-sm font-semibold text-white disabled:bg-neutre-200 disabled:text-neutre-500"
-          >
-            Enregistrer
-          </button>
-        </div>
-      </footer>
+          </div>
+        </footer>
       ) : null}
     </>
   );
