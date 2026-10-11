@@ -110,6 +110,20 @@ export async function GET(
       const y = doc.y;
       doc.font("Helvetica").fontSize(10);
       doc.text(l.produit.nom, colonnes[0].x, y, { width: colonnes[0].w });
+      // Emprunté à un autre Del Arte : la commande comprend de quoi le rendre.
+      const aRendre = l.echanges.filter((e) => e.nousDevons > 0);
+      if (aRendre.length) {
+        doc.fontSize(8).fillColor("#b45309");
+        doc.text(
+          aRendre
+            .map((e) => `dont ${qte(e.nousDevons)} ${l.produit.unite ?? "u"} à rendre à ${e.delArte}`)
+            .join(" · "),
+          colonnes[0].x,
+          doc.y,
+          { width: colonnes[0].w },
+        );
+        doc.fontSize(10).fillColor("#171b24");
+      }
       const bas = doc.y;
       doc.text(l.produit.conditionnement ?? "—", colonnes[1].x, y, {
         width: colonnes[1].w,

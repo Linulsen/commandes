@@ -20,7 +20,7 @@ async function getHorsCommande(): Promise<Reception[]> {
   const { data, error } = await sb()
     .from("cmd_receptions")
     .select("*")
-    .in("type", ["depannage", "perte"])
+    .in("type", ["depannage", "perte", "pret", "rendu", "retour"])
     .eq("statut", "validee")
     .order("date_reception", { ascending: false })
     .order("id", { ascending: false })
@@ -93,7 +93,11 @@ export default async function Historique() {
                       {libelleHorsCommande(e.reception)}
                     </p>
                     <p className="mt-0.5 text-xs text-neutre-500">
-                      {e.reception.type === "perte" ? "jeté le" : "acheté le"}{" "}
+                      {e.reception.type === "perte"
+                        ? "jeté le"
+                        : e.reception.del_arte
+                          ? "le"
+                          : "acheté le"}{" "}
                       {dateMoyenne(e.reception.date_reception)}
                     </p>
                   </div>
@@ -104,7 +108,11 @@ export default async function Historique() {
                         : "bg-neutre-100 text-neutre-700"
                     }`}
                   >
-                    {e.reception.type === "perte" ? "perte" : "dépannage"}
+                    {e.reception.type === "perte"
+                      ? "perte"
+                      : e.reception.del_arte
+                        ? "Del Arte"
+                        : "dépannage"}
                   </span>
                 </Link>
               </li>

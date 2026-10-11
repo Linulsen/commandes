@@ -70,6 +70,12 @@ export type Ligne = {
   perte: number | null;
   /** Cartons saisis au relevé, déjà inclus dans `stock`. */
   stock_colis?: number | null;
+  /**
+   * Quantité qu'un autre Del Arte nous doit et dont on attend le retour :
+   * ajoutée au stock pour la proposition. Null : pas encore décidé ; 0 :
+   * commander selon la préconisation.
+   */
+  retour_attendu?: number | null;
   maj_le: string | null;
 };
 
@@ -103,8 +109,15 @@ export type ReleveResume = {
 
 export type Reception = {
   id: number;
-  /** Livraison d'une commande ; dépannage (entrée hors commande) ; perte (produit jeté). */
-  type: "livraison" | "depannage" | "perte";
+  /**
+   * Livraison d'une commande ; dépannage (entrée hors commande) ; perte
+   * (produit jeté). Échanges avec un autre Del Arte (`del_arte` renseigné) :
+   * dépannage = ils nous prêtent ; rendu = nous leur rendons ; pret = nous leur
+   * prêtons ; retour = ils nous rendent.
+   */
+  type: "livraison" | "depannage" | "perte" | "pret" | "rendu" | "retour";
+  /** Restaurant Del Arte de l'échange ; null pour un dépannage en magasin. */
+  del_arte?: string | null;
   session_id: number | null;
   fournisseur_id: number | null;
   date_reception: string;

@@ -134,6 +134,25 @@ export function suggerer(
   return colis;
 }
 
+/**
+ * Stock qui sert à la proposition, compte tenu des échanges avec les autres
+ * Del Arte :
+ * - ce que nous devons (emprunté, pas encore rendu) est réservé : il est en
+ *   chambre mais pas à nous, on le retire ;
+ * - ce qu'un autre restaurant nous doit n'est compté que si l'on a choisi, à
+ *   ce relevé, de compter sur son retour (`retourAttendu`).
+ * Ainsi un emprunt non rendu est recommandé à chaque commande, sans jamais
+ * l'être deux fois : ce qui a été livré en plus est dans le stock compté.
+ */
+export function stockDisponible(
+  stockTotal: number | null,
+  reserve: number,
+  retourAttendu: number | null,
+): number | null {
+  if (stockTotal === null) return null;
+  return Math.round((stockTotal - reserve + (retourAttendu ?? 0)) * 1000) / 1000;
+}
+
 export type Alerte = "rupture" | "surstock" | "nouveau" | null;
 
 export function alerte(p: Prevision, stock: number | null): Alerte {

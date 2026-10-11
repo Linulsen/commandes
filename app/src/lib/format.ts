@@ -36,7 +36,22 @@ export const normaliser = (s: string) =>
   s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 /** « Dépannage · Metro », « Perte · DLC dépassée » : le titre d'un mouvement hors commande. */
-export function libelleHorsCommande(r: { type: string; provenance: string | null }) {
+export function libelleHorsCommande(r: {
+  type: string;
+  provenance: string | null;
+  del_arte?: string | null;
+}) {
+  if (r.del_arte) {
+    const nom =
+      r.type === "pret"
+        ? "Prêt à"
+        : r.type === "rendu"
+          ? "Rendu à"
+          : r.type === "retour"
+            ? "Retour de"
+            : "Emprunt à";
+    return `${nom} ${r.del_arte}`;
+  }
   const nom = r.type === "perte" ? "Perte" : "Dépannage";
   return r.provenance ? `${nom} · ${r.provenance}` : nom;
 }

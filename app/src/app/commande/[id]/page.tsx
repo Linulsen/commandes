@@ -74,6 +74,15 @@ export default async function Commande({
           nbPoints: l.prevision.nbPoints,
           stockPrecedent: l.stockPrecedent,
           joursHorizon: l.prevision.joursHorizon,
+          reserve: l.reserve,
+          duNous: l.duNous,
+          echanges: l.echanges.map((e) => ({
+            delArte: e.delArte,
+            nousDevons: e.nousDevons,
+            ilsDoivent: e.ilsDoivent,
+          })),
+          retourAttendu:
+            l.ligne.retour_attendu == null ? null : Number(l.ligne.retour_attendu),
           releves: l.releves.map((r) => ({
             date: r.date,
             stock: r.stock === null ? null : Number(r.stock),

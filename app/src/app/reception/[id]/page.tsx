@@ -15,7 +15,7 @@ export default async function PageReception({
   if (!Number.isInteger(id)) notFound();
   const donnees = await getReception(id);
   if (!donnees) notFound();
-  const { reception, session, lignes, catalogue, fournisseur } = donnees;
+  const { reception, session, lignes, catalogue, fournisseur, echanges } = donnees;
 
   // Dépannage et perte se saisissent de la même façon : en unités de stock,
   // sans commande de référence.
@@ -26,7 +26,15 @@ export default async function PageReception({
   const sousTitre = depannage
     ? reception.type === "perte"
       ? "Produits jetés"
-      : "Achat hors commande"
+      : reception.del_arte
+        ? reception.type === "depannage"
+          ? "Marchandise prêtée, à leur rendre"
+          : reception.type === "pret"
+            ? "Marchandise prêtée, qu’ils nous rendront"
+            : reception.type === "rendu"
+              ? "Ce que nous leur rendons"
+              : "Ce qu’ils nous rendent"
+        : "Achat hors commande"
     : session
       ? `commande du ${dateMoyenne(session.date_commande)}${session.libelle ? ` · ${session.libelle}` : ""}`
       : undefined;
@@ -50,6 +58,14 @@ export default async function PageReception({
           majLe: Date.parse(l.maj_le),
         }))}
         catalogue={catalogue}
+        echanges={echanges.map((e) => ({
+          delArte: e.delArte,
+          produitId: e.produitId,
+          nom: e.nom,
+          unite: e.unite,
+          nousDevons: e.nousDevons,
+          ilsDoivent: e.ilsDoivent,
+        }))}
       />
     </main>
   );

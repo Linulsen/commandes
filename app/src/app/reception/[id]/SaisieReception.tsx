@@ -13,6 +13,7 @@ import {
 } from "@/lib/file-attente";
 import type { ProduitCatalogue } from "@/lib/model";
 import type { Reception } from "@/lib/types";
+import { echangeDe } from "@/lib/del-arte";
 import { useEcranAllume } from "@/lib/ecran";
 import EtatEnvoi from "../../EtatEnvoi";
 import PhotoBL from "./PhotoBL";
@@ -30,6 +31,16 @@ export type LigneRec = {
 
 type Etat = { commandes: number | null; quantite: number | null; recu: boolean };
 
+/** Ce qui est dû avec un autre Del Arte, rappelé à la livraison. */
+export type EchangeRappel = {
+  delArte: string;
+  produitId: number;
+  nom: string;
+  unite: string | null;
+  nousDevons: number;
+  ilsDoivent: number;
+};
+
 /**
  * Réception d'une livraison ou d'un dépannage.
  *
@@ -46,10 +57,12 @@ export default function SaisieReception({
   reception,
   lignes,
   catalogue,
+  echanges = [],
 }: {
   reception: Reception;
   lignes: LigneRec[];
   catalogue: ProduitCatalogue[];
+  echanges?: EchangeRappel[];
 }) {
   const router = useRouter();
   const envoi = useFileAttente();
@@ -57,6 +70,8 @@ export default function SaisieReception({
   // Dépannage et perte : hors commande, quantités en unités de stock.
   const depannage = reception.type !== "livraison";
   const perte = reception.type === "perte";
+  // Échange avec un autre Del Arte : le restaurant est fixé à l'ouverture.
+  const echange = echangeDe(reception);
 
   const [etats, setEtats] = useState<Record<number, Etat>>(() =>
     Object.fromEntries(
@@ -251,7 +266,17 @@ export default function SaisieReception({
           <div className="flex items-end gap-3">
             <label className="min-w-0 flex-1">
               <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutre-500">
-                {perte ? "Date de la perte" : depannage ? "Date du dépannage" : "Date de réception"}
+                {perte
+                  ? "Date de la perte"
+                  : echange === "pret"
+                    ? "Date du prêt"
+                    : echange === "rendu"
+                      ? "Date du rendu"
+                      : echange === "retour"
+                        ? "Date du retour"
+                        : depannage
+                          ? "Date du dépannage"
+                          : "Date de réception"}
               </span>
               <input
                 type="date"
@@ -264,7 +289,7 @@ export default function SaisieReception({
                 className="mt-1 min-h-12 w-full rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700 disabled:bg-neutre-50"
               />
             </label>
-            {depannage ? (
+            {depannage && !echange ? (
               <label className="min-w-0 flex-1">
                 <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutre-500">
                   {perte ? "Motif" : "Où"}
@@ -284,7 +309,15 @@ export default function SaisieReception({
             <p className="mt-2 text-xs leading-relaxed text-neutre-500">
               {perte
                 ? "Quantités jetées, en unités de stock (kg, pièces…), comme au relevé. La perte compte dans la période où elle a eu lieu : elle n’est pas comptée comme consommée."
-                : "Quantités en unités de stock (kg, pièces…), comme au relevé. Le dépannage compte dans la période où il a eu lieu."}
+                : echange === "emprunt"
+                  ? "Quantités en unités de stock, comme au relevé. Elles entrent en stock mais restent réservées pour ce restaurant : elles seront recommandées à chaque commande tant qu’elles ne sont pas marquées rendues."
+                  : echange === "pret"
+                    ? "Quantités en unités de stock, comme au relevé. Elles sortent de la chambre sans compter comme consommées. À chaque commande, on vous demandera si vous comptez sur leur retour."
+                    : echange === "rendu"
+                      ? "Tout ce que nous leur devons est prérempli : pour un rendu partiel, corrigez les quantités. Ce qui n’est pas rendu reste réservé."
+                      : echange === "retour"
+                        ? "Tout ce qu’ils nous doivent est prérempli : corrigez si le retour est partiel. Le reste reste dû."
+                        : "Quantités en unités de stock (kg, pièces…), comme au relevé. Le dépannage compte dans la période où il a eu lieu."}
             </p>
           ) : (
             <p className="mt-2 text-xs leading-relaxed text-neutre-500">
@@ -294,7 +327,11 @@ export default function SaisieReception({
           )}
         </div>
 
-        {!fige && !perte ? (
+        {!fige && !depannage && echanges.length ? (
+          <RappelEchanges echanges={echanges} />
+        ) : null}
+
+        {!fige && !perte && !echange ? (
           <PhotoBL
             receptionId={reception.id}
             depannage={depannage}
@@ -332,7 +369,9 @@ export default function SaisieReception({
               placeholder={
                 perte
                   ? "Chercher le produit jeté"
-                  : depannage
+                  : echange
+                    ? "Chercher le produit"
+                    : depannage
                     ? "Chercher le produit acheté"
                     : "Chercher ou ajouter un produit"
               }
@@ -374,7 +413,9 @@ export default function SaisieReception({
               : depannage
                 ? perte
                   ? "Cherchez les produits jetés pour les ajouter."
-                  : "Cherchez les produits achetés pour les ajouter."
+                  : echange
+                    ? "Cherchez les produits échangés pour les ajouter."
+                    : "Cherchez les produits achetés pour les ajouter."
                 : "Rien sur cette commande."}
           </p>
         ) : (
@@ -434,7 +475,15 @@ export default function SaisieReception({
             <p className="rounded-xl bg-vert-50 px-4 py-3 text-sm text-vert-800">
               {perte
                 ? "Perte validée. Ces quantités ne sont pas comptées comme consommées dans les prochaines propositions de commande."
-                : "Réception validée. Les prochaines propositions de commande se fondent sur ce qui a été reçu."}
+                : echange === "emprunt"
+                  ? "Emprunt validé. Ces quantités sont réservées pour ce restaurant jusqu’à ce qu’un rendu soit enregistré."
+                  : echange === "pret"
+                    ? "Prêt validé. Il n’est pas compté comme consommé ; il reste dû jusqu’à ce que leur retour soit enregistré."
+                    : echange === "rendu"
+                      ? "Rendu validé. Ces quantités ne sont plus réservées."
+                      : echange === "retour"
+                        ? "Retour validé. Ces quantités sont de nouveau dans notre stock."
+                        : "Réception validée. Les prochaines propositions de commande se fondent sur ce qui a été reçu."}
             </p>
             <button
               onClick={async () => {
@@ -639,3 +688,61 @@ const LigneProduit = memo(function LigneProduit({
     </li>
   );
 });
+
+/**
+ * À la livraison : ce que nous devons à un autre Del Arte (à leur rendre avec
+ * cette marchandise) et ce qu'on nous doit, pour les produits du fournisseur.
+ */
+function RappelEchanges({ echanges }: { echanges: EchangeRappel[] }) {
+  const dus = echanges.filter((e) => e.nousDevons > 0);
+  const attendus = echanges.filter((e) => e.ilsDoivent > 0);
+  const restos = (liste: EchangeRappel[]) => [...new Set(liste.map((e) => e.delArte))];
+  return (
+    <div className="space-y-2">
+      {restos(dus).map((resto) => (
+        <div key={`d${resto}`} className="rounded-2xl border border-ambre-100 bg-ambre-50 p-4">
+          <p className="font-titre text-sm font-semibold text-ambre-700">À rendre à {resto}</p>
+          <ul className="mt-1 space-y-0.5 text-sm text-ambre-700">
+            {dus
+              .filter((e) => e.delArte === resto)
+              .map((e) => (
+                <li key={e.produitId} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">{e.nom}</span>
+                  <span className="shrink-0 font-semibold tabular-nums">
+                    {qte(e.nousDevons)} {e.unite ?? "u"}
+                  </span>
+                </li>
+              ))}
+          </ul>
+          <form action="/api/receptions" method="post" className="mt-2">
+            <input type="hidden" name="type" value="rendu" />
+            <input type="hidden" name="delArte" value={resto} />
+            <button
+              type="submit"
+              className="min-h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ambre-700"
+            >
+              Enregistrer le rendu
+            </button>
+          </form>
+        </div>
+      ))}
+      {restos(attendus).map((resto) => (
+        <div key={`a${resto}`} className="rounded-2xl border border-neutre-100 bg-white p-4 text-sm">
+          <p className="font-titre font-semibold">{resto} nous doit encore</p>
+          <ul className="mt-1 space-y-0.5 text-neutre-700">
+            {attendus
+              .filter((e) => e.delArte === resto)
+              .map((e) => (
+                <li key={e.produitId} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">{e.nom}</span>
+                  <span className="shrink-0 font-semibold tabular-nums">
+                    {qte(e.ilsDoivent)} {e.unite ?? "u"}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}

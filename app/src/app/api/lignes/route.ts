@@ -54,6 +54,8 @@ async function enregistrer(lignes: Brute[]) {
     if ("perte" in l) ligne.perte = nombre(l.perte);
     // Saisie en cartons + unités : le stock reste le total en unités.
     if ("stockColis" in l) ligne.stock_colis = nombre(l.stockColis);
+    // Produit qu'un autre Del Arte nous doit : compte-t-on sur son retour ?
+    if ("retourAttendu" in l) ligne.retour_attendu = nombre(l.retourAttendu);
     aEcrire.set(`${sessionId}:${produitId}`, ligne);
   });
 

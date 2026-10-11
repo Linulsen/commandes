@@ -1,5 +1,13 @@
 import { sb, selectAll } from "./db";
-import { alerte, couverture, prevoir, suggerer, type Prevision } from "./forecast";
+import {
+  alerte,
+  couverture,
+  prevoir,
+  stockDisponible,
+  suggerer,
+  type Prevision,
+} from "./forecast";
+import { positif, type SoldeDelArte } from "./del-arte";
 import type {
   CommandeRpc,
   Fournisseur,
@@ -33,6 +41,12 @@ export type LigneEnrichie = {
    * comptage qui lui sont rattachées (converti). Égal à `ligne.stock` sinon.
    */
   stockTotal: number | null;
+  /** Emprunté à un autre Del Arte et pas encore rendu : réservé, en unités. */
+  reserve: number;
+  /** Prêté à un autre Del Arte et pas encore revenu, en unités. */
+  duNous: number;
+  /** Détail des échanges en cours, restaurant par restaurant. */
+  echanges: SoldeDelArte[];
 };
 
 /** Une ligne de comptage complète un autre produit et ne se commande jamais. */
@@ -49,6 +63,25 @@ export function quantiteRetenue(l: LigneEnrichie): number {
   if (estLigneDeComptage(l.produit)) return 0;
   if (l.ligne.colis !== null) return Number(l.ligne.colis);
   return l.stockTotal !== null ? l.suggestion : 0;
+}
+
+/**
+ * Soldes des échanges avec les autres Del Arte : ce que nous devons et ce
+ * qu'on nous doit, par restaurant et par produit (lignes à zéro écartées).
+ */
+export async function getSoldesDelArte(produitIds?: number[]): Promise<SoldeDelArte[]> {
+  let q = sb().from("cmd_del_arte_soldes").select("del_arte,produit_id,nous_devons,ils_doivent");
+  if (produitIds) q = q.in("produit_id", produitIds.length ? produitIds : [-1]);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return (data ?? [])
+    .map((r) => ({
+      delArte: r.del_arte as string,
+      produitId: r.produit_id as number,
+      nousDevons: positif(Number(r.nous_devons)),
+      ilsDoivent: positif(Number(r.ils_doivent)),
+    }))
+    .filter((r) => r.nousDevons > 0 || r.ilsDoivent > 0);
 }
 
 export async function getFournisseurs() {
@@ -108,6 +141,9 @@ export async function getCommande(sessionId: number) {
   if (!paquet?.session) return null;
 
   const { session, zones } = paquet;
+  const soldes = await getSoldesDelArte(paquet.lignes.map((l) => l.produit.id));
+  const soldesPar = new Map<number, SoldeDelArte[]>();
+  for (const so of soldes) soldesPar.set(so.produitId, [...(soldesPar.get(so.produitId) ?? []), so]);
   const zoneParId = new Map(zones.map((z) => [z.id, z]));
 
   // Ce que les lignes de comptage ajoutent au stock de leur produit principal
@@ -140,6 +176,7 @@ export async function getCommande(sessionId: number) {
       note: brut.ligne.note ?? null,
       perte: brut.ligne.perte ?? null,
       stock_colis: brut.ligne.stock_colis ?? null,
+      retour_attendu: brut.ligne.retour_attendu ?? null,
       maj_le: brut.ligne.maj_le ?? null,
     };
     const ajout = rattache.get(produit.id);
@@ -148,6 +185,14 @@ export async function getCommande(sessionId: number) {
         ? null
         : Number(ligne.stock ?? 0) + (ajout ?? 0);
     const comptage = estLigneDeComptage(produit);
+    const echanges = comptage ? [] : (soldesPar.get(produit.id) ?? []);
+    const reserve = positif(echanges.reduce((a, e) => a + e.nousDevons, 0));
+    const duNous = positif(echanges.reduce((a, e) => a + e.ilsDoivent, 0));
+    const dispo = stockDisponible(
+      stockTotal,
+      reserve,
+      duNous > 0 && ligne.retour_attendu != null ? Number(ligne.retour_attendu) : null,
+    );
     return {
       ligne,
       produit,
@@ -157,15 +202,18 @@ export async function getCommande(sessionId: number) {
         ? 0
         : suggerer(
             prevision.consoPrevue,
-            stockTotal,
+            dispo,
             Number(produit.fact),
             Number(session.marge),
           ),
-      alerte: comptage ? null : alerte(prevision, stockTotal),
-      couverture: comptage ? null : couverture(prevision, stockTotal),
+      alerte: comptage ? null : alerte(prevision, dispo),
+      couverture: comptage ? null : couverture(prevision, dispo),
       stockPrecedent: brut.stockPrecedent,
       releves: brut.releves ?? [],
       stockTotal,
+      reserve,
+      duNous,
+      echanges,
     };
   });
 
@@ -356,7 +404,7 @@ async function nettoyerHorsCommandeVides(): Promise<Set<number>> {
   const { data, error } = await sb()
     .from("cmd_receptions")
     .select("id,created_at")
-    .in("type", ["depannage", "perte"])
+    .in("type", ["depannage", "perte", "pret", "rendu", "retour"])
     .eq("statut", "brouillon");
   if (error || !data?.length) return new Set();
   const ids = data.map((r) => r.id as number);
@@ -380,7 +428,7 @@ async function nettoyerHorsCommandeVides(): Promise<Set<number>> {
 export async function getReceptionsAccueil() {
   const caches = await nettoyerHorsCommandeVides().catch(() => new Set<number>());
   const depuis = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
-  const [sessions, receptions, fournisseurs] = await Promise.all([
+  const [sessions, receptions, fournisseurs, echanges] = await Promise.all([
     sb()
       .from("cmd_sessions")
       .select("*")
@@ -395,6 +443,7 @@ export async function getReceptionsAccueil() {
       .order("id", { ascending: false })
       .limit(60),
     getFournisseurs(),
+    getEchangesEnCours(),
   ]);
   if (sessions.error) throw new Error(sessions.error.message);
   if (receptions.error) throw new Error(receptions.error.message);
@@ -426,6 +475,7 @@ export async function getReceptionsAccueil() {
     enCours: toutes.filter((r) => r.statut === "brouillon" && !caches.has(r.id)),
     recentes: toutes.filter((r) => r.statut === "validee").slice(0, 20),
     fournisseurs,
+    echanges,
   };
 }
 
@@ -485,19 +535,79 @@ export async function ouvrirReception(sessionId: number) {
  */
 export async function creerDepannage(
   provenance: string | null,
-  type: "depannage" | "perte" = "depannage",
+  type: "depannage" | "perte" | "pret" | "rendu" | "retour" = "depannage",
+  delArte: string | null = null,
 ) {
   const { data, error } = await sb()
     .from("cmd_receptions")
     .insert({
       type,
-      provenance,
+      provenance: delArte ?? provenance,
+      del_arte: delArte,
       date_reception: new Date().toISOString().slice(0, 10),
     })
     .select()
     .single();
   if (error) throw new Error(error.message);
-  return data as Reception;
+  const reception = data as Reception;
+
+  // Un rendu part de tout ce qui est dû à ce restaurant, un retour de tout ce
+  // qu'il nous doit : il n'y a plus qu'à corriger un rendu partiel.
+  if (delArte && (type === "rendu" || type === "retour")) {
+    const soldes = (await getSoldesDelArte()).filter((so) => so.delArte === delArte);
+    const lignes = soldes
+      .map((so) => ({
+        produit_id: so.produitId,
+        q: type === "rendu" ? so.nousDevons : so.ilsDoivent,
+      }))
+      .filter((l) => l.q > 0);
+    if (lignes.length) {
+      const ins = await sb().from("cmd_reception_lignes").insert(
+        lignes.map((l) => ({
+          reception_id: reception.id,
+          produit_id: l.produit_id,
+          unites: l.q,
+          recu: true,
+        })),
+      );
+      if (ins.error) throw new Error(ins.error.message);
+    }
+  }
+  return reception;
+}
+
+export type EchangeEnCours = SoldeDelArte & {
+  nom: string;
+  unite: string | null;
+  fournisseurId: number;
+};
+
+/** Soldes avec les autres Del Arte, avec le nom et l'unité des produits. */
+export async function getEchangesEnCours(produitIds?: number[]): Promise<EchangeEnCours[]> {
+  const soldes = await getSoldesDelArte(produitIds);
+  if (!soldes.length) return [];
+  const [prod, zones] = await Promise.all([
+    sb()
+      .from("cmd_produits")
+      .select("id,nom,unite,zone_id")
+      .in("id", [...new Set(soldes.map((so) => so.produitId))]),
+    getZones(),
+  ]);
+  if (prod.error) throw new Error(prod.error.message);
+  const fournisseurDe = new Map<number, number>(zones.map((z) => [z.id, z.fournisseur_id]));
+  type Brut = { id: number; nom: string; unite: string | null; zone_id: number };
+  const p = new Map(((prod.data ?? []) as Brut[]).map((x) => [x.id, x]));
+  return soldes
+    .map((so) => {
+      const x = p.get(so.produitId);
+      return {
+        ...so,
+        nom: x?.nom ?? `Produit ${so.produitId}`,
+        unite: x?.unite ?? null,
+        fournisseurId: x ? (fournisseurDe.get(x.zone_id) ?? 0) : 0,
+      };
+    })
+    .sort((a, b) => alpha(a.delArte, b.delArte) || alpha(a.nom, b.nom));
 }
 
 export type ProduitCatalogue = Pick<
@@ -571,11 +681,19 @@ export async function getReception(id: number) {
         rangZone.get(a.zone_id)! - rangZone.get(b.zone_id)! || alpha(a.nom, b.nom),
     );
 
+  // À la livraison, on rend ce qui a été emprunté : on le rappelle, et on
+  // signale ce qu'un autre restaurant nous doit encore.
+  const echanges =
+    reception.type === "livraison"
+      ? await getEchangesEnCours(catalogue.map((p) => p.id))
+      : [];
+
   return {
     reception,
     session,
     lignes,
     catalogue,
+    echanges,
     fournisseur: fournisseurs.find((f) => f.id === reception.fournisseur_id) ?? null,
     fournisseurs,
   };

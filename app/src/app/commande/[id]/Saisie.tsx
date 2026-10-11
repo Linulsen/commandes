@@ -3,7 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { suggerer, type Fiabilite } from "@/lib/forecast";
+import { stockDisponible, suggerer, type Fiabilite } from "@/lib/forecast";
 import { dateCourte, normaliser, qte } from "@/lib/format";
 import {
   lireNombre,
@@ -54,6 +54,13 @@ export type LigneSaisie = {
   stockPrecedent: number | null;
   joursHorizon: number;
   releves: ReleveResume[];
+  /** Emprunté à un autre Del Arte, pas encore rendu : réservé, hors stock disponible. */
+  reserve: number;
+  /** Prêté à un autre Del Arte, pas encore revenu. */
+  duNous: number;
+  echanges: { delArte: string; nousDevons: number; ilsDoivent: number }[];
+  /** Choix enregistré : quantité dont on attend le retour (0 : non ; null : à décider). */
+  retourAttendu: number | null;
 };
 
 type Etat = {
@@ -65,6 +72,12 @@ type Etat = {
   colis: number | null;
   force: boolean;
   perte: number | null;
+  /**
+   * Ce qu'un autre Del Arte nous doit et dont on attend le retour cette
+   * semaine : ajouté au stock pour la proposition. 0 : commander selon la
+   * préconisation ; null : question pas encore tranchée.
+   */
+  retour: number | null;
 };
 
 /** Ce que le pavé est en train de remplir. */
@@ -126,6 +139,7 @@ export default function Saisie({
       // plus la proposition à jour.
       force: l.colis !== null && l.colis !== l.suggestionEnregistree,
       perte: l.perte,
+      retour: l.retourAttendu,
     }),
     [],
   );
@@ -157,6 +171,10 @@ export default function Saisie({
         colis: (corps.colis as number | null) ?? null,
         force: corps.force === true,
         perte: (corps.perte as number | null) ?? null,
+        retour:
+          "retourAttendu" in corps
+            ? ((corps.retourAttendu as number | null) ?? null)
+            : (suivant[l.produitId]?.retour ?? l.retourAttendu),
       };
       change = true;
     }
@@ -206,12 +224,36 @@ export default function Saisie({
     [etatInitial, rattachees],
   );
 
+  /**
+   * Stock pour la proposition : sans ce que nous devons à un autre Del Arte,
+   * avec ce qu'on nous doit si l'on compte sur son retour.
+   */
+  const stockDispo = useCallback(
+    (l: LigneSaisie, e: Etat, retour = e.retour) =>
+      stockDisponible(stockTotal(l, e), l.reserve, l.duNous > 0 ? retour : null),
+    [stockTotal],
+  );
+
   const propositionDe = useCallback(
-    (l: LigneSaisie, e: Etat) =>
+    (l: LigneSaisie, e: Etat, retour = e.retour) =>
       l.comptePour !== null
         ? 0
-        : suggerer(l.consoPrevue, stockTotal(l, e), l.fact, Number(session.marge)),
-    [session.marge, stockTotal],
+        : suggerer(l.consoPrevue, stockDispo(l, e, retour), l.fact, Number(session.marge)),
+    [session.marge, stockDispo],
+  );
+
+  /**
+   * Un autre Del Arte nous doit ce produit et la préconisation en demande :
+   * faut-il commander, ou compter sur leur retour cette semaine ?
+   */
+  const questionOuverte = useCallback(
+    (l: LigneSaisie, e: Etat) =>
+      l.comptePour === null &&
+      l.duNous > 0 &&
+      e.retour === null &&
+      stockTotal(l, e) !== null &&
+      propositionDe(l, e, 0) > 0,
+    [propositionDe, stockTotal],
   );
 
   const colisRetenu = useCallback(
@@ -237,6 +279,7 @@ export default function Saisie({
         consoPrevue: l.consoPrevue,
         perte: etat.perte,
         force: etat.force,
+        ...(l.duNous > 0 ? { retourAttendu: etat.retour } : {}),
         ...(l.parCarton ? { stockColis: etat.stock === null ? null : etat.cartons } : {}),
       }),
     [colisRetenu, propositionDe, session.id],
@@ -384,6 +427,7 @@ export default function Saisie({
     );
 
   const saisis = lignes.filter((l) => etatDe(l).stock !== null).length;
+  const questions = lignes.filter((l) => questionOuverte(l, etatDe(l)));
   const aCommander = lignes
     .map((l) => ({ l, colis: colisRetenu(l, etatDe(l)), etat: etatDe(l) }))
     .filter((x) => x.colis > 0);
@@ -583,6 +627,12 @@ export default function Saisie({
             aCommander={aCommander}
             saisis={saisis}
             fige={fige}
+            questions={questions.map((l) => ({
+              l,
+              selon: propositionDe(l, etatDe(l), 0),
+              avecRetour: propositionDe(l, etatDe(l), l.duNous),
+            }))}
+            onRetour={(produitId, retour) => modifier(produitId, { retour })}
             onMarge={async (marge) => {
               const r = await fetch(`/api/session/${session.id}`, {
                 method: "PATCH",
@@ -636,6 +686,7 @@ export default function Saisie({
                   etat={etat}
                   colis={colisRetenu(l, etat)}
                   stockTotal={stockTotal(l, etat)}
+                  question={questionOuverte(l, etat)}
                   fige={fige}
                   zone={terme ? nomZone.get(l.zoneId) : undefined}
                   enAttente={envoi.cles.has(`releve:${session.id}:${l.produitId}`)}
@@ -746,6 +797,9 @@ export default function Saisie({
               : propositionDe(ligneFiche, etatDe(ligneFiche))
           }
           stockTotal={stockTotal(ligneFiche, etatDe(ligneFiche))}
+          stockDispo={stockDispo(ligneFiche, etatDe(ligneFiche))}
+          selon={propositionDe(ligneFiche, etatDe(ligneFiche), 0)}
+          avecRetour={propositionDe(ligneFiche, etatDe(ligneFiche), ligneFiche.duNous)}
           zone={nomZone.get(ligneFiche.zoneId)}
           fige={fige}
           enAttente={envoi.cles.has(`releve:${session.id}:${ligneFiche.produitId}`)}
@@ -771,6 +825,7 @@ const LigneProduit = memo(function LigneProduit({
   etat,
   colis,
   stockTotal,
+  question,
   fige,
   zone,
   enAttente,
@@ -784,6 +839,8 @@ const LigneProduit = memo(function LigneProduit({
   colis: number;
   /** Stock de la ligne et de ses lignes de comptage, converti. */
   stockTotal: number | null;
+  /** Un autre Del Arte nous doit ce produit : commander ou attendre ? */
+  question: boolean;
   fige: boolean;
   zone?: string;
   enAttente: boolean;
@@ -850,6 +907,19 @@ const LigneProduit = memo(function LigneProduit({
           {tendu ? (
             <span className="rounded-full bg-rouge-50 px-1.5 text-[11px] font-semibold text-rouge-700">
               tendu
+            </span>
+          ) : null}
+          {ligne.reserve > 0 ? (
+            <span className="font-semibold text-ambre-700">
+              dont {qte(ligne.reserve)} à rendre
+            </span>
+          ) : null}
+          {ligne.duNous > 0 ? (
+            <span className="font-semibold text-vert-800">on nous doit {qte(ligne.duNous)}</span>
+          ) : null}
+          {question ? (
+            <span className="rounded-full bg-rouge-700 px-1.5 text-[11px] font-semibold text-white">
+              à décider
             </span>
           ) : null}
           {enAttente ? <span className="text-ambre-700">sur le téléphone</span> : null}
@@ -998,6 +1068,9 @@ function Fiche({
   colis,
   proposition,
   stockTotal,
+  stockDispo,
+  selon,
+  avecRetour,
   zone,
   fige,
   enAttente,
@@ -1011,6 +1084,11 @@ function Fiche({
   colis: number;
   proposition: number | null;
   stockTotal: number | null;
+  /** Stock retenu pour la proposition, échanges Del Arte compris. */
+  stockDispo: number | null;
+  /** Proposition sans compter sur un retour, et en comptant dessus. */
+  selon: number;
+  avecRetour: number;
   zone?: string;
   fige: boolean;
   enAttente: boolean;
@@ -1087,6 +1165,19 @@ function Fiche({
               </span>{" "}
               en tout. C’est ce total qui sert au calcul.
             </p>
+          ) : null}
+
+          {ligne.comptePour === null && (ligne.reserve > 0 || ligne.duNous > 0) ? (
+            <EchangesFiche
+              ligne={ligne}
+              etat={etat}
+              stockTotal={stockTotal}
+              stockDispo={stockDispo}
+              selon={selon}
+              avecRetour={avecRetour}
+              fige={fige}
+              onRetour={(retour) => onModifier(ligne.produitId, { retour })}
+            />
           ) : null}
 
           {ligne.comptePour !== null ? (
@@ -1249,6 +1340,8 @@ function Recapitulatif({
   aCommander,
   saisis,
   fige,
+  questions,
+  onRetour,
   onMarge,
   onValider,
   onRouvrir,
@@ -1259,6 +1352,9 @@ function Recapitulatif({
   /** Nombre de produits dont le stock a été relevé. */
   saisis: number;
   fige: boolean;
+  /** Produits qu'un autre Del Arte nous doit : commander ou attendre ? */
+  questions: { l: LigneSaisie; selon: number; avecRetour: number }[];
+  onRetour: (produitId: number, retour: number) => void;
   onMarge: (marge: number) => void;
   onValider: () => void;
   onRouvrir: () => void;
@@ -1289,6 +1385,46 @@ function Recapitulatif({
         </div>
       ) : null}
 
+      {!fige && questions.length ? (
+        <section className="sans-impression mb-3 rounded-2xl border border-rouge-100 bg-rouge-50 p-4">
+          <h2 className="font-titre text-sm font-semibold text-rouge-700">
+            À décider avant de valider
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-rouge-700">
+            Un autre Del Arte vous doit ces produits. Commandez-vous selon la
+            préconisation, ou comptez-vous sur leur retour cette semaine ?
+          </p>
+          <ul className="mt-3 space-y-3">
+            {questions.map(({ l, selon, avecRetour }) => (
+              <li key={l.produitId} className="rounded-xl bg-white p-3">
+                <p className="text-sm font-semibold">{l.nom}</p>
+                <p className="text-xs text-neutre-500">
+                  Préconisation {selon} colis ·{" "}
+                  {l.echanges
+                    .filter((e) => e.ilsDoivent > 0)
+                    .map((e) => `${e.delArte} doit ${qte(e.ilsDoivent)} ${l.unite ?? "u"}`)
+                    .join(" · ")}
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => onRetour(l.produitId, 0)}
+                    className="min-h-12 rounded-xl border border-neutre-200 px-2 text-xs font-semibold text-neutre-700"
+                  >
+                    Commander {selon} colis
+                  </button>
+                  <button
+                    onClick={() => onRetour(l.produitId, l.duNous)}
+                    className="min-h-12 rounded-xl bg-vert-700 px-2 text-xs font-semibold text-white"
+                  >
+                    Compter sur le retour ({avecRetour} colis)
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {aCommander.length === 0 ? (
         <p className="rounded-2xl border border-neutre-100 bg-white p-4 text-sm text-neutre-500">
           {saisis === 0
@@ -1317,6 +1453,17 @@ function Recapitulatif({
                       <p className="text-xs text-neutre-500">
                         stock {qte(etat.stock)} · {l.conditionnement ?? "—"} · soit{" "}
                         {qte(colis * l.fact)} {l.unite ?? "u"}
+                        {l.reserve > 0 ? (
+                          <span className="font-semibold text-ambre-700">
+                            {" "}
+                            · dont {qte(l.reserve)} à rendre (
+                            {l.echanges
+                              .filter((e) => e.nousDevons > 0)
+                              .map((e) => e.delArte)
+                              .join(", ")}
+                            )
+                          </span>
+                        ) : null}
                       </p>
                     </div>
                     <span className="shrink-0 rounded-lg bg-neutre-50 px-2.5 py-1 font-titre text-base font-semibold tabular-nums">
@@ -1364,7 +1511,7 @@ function Recapitulatif({
         ) : (
           <button
             onClick={onValider}
-            disabled={saisis === 0}
+            disabled={saisis === 0 || questions.length > 0}
             className="min-h-13 w-full rounded-xl bg-vert-700 px-4 font-titre text-base font-semibold text-white disabled:opacity-35"
           >
             {aCommander.length === 0 ? "Valider sans commande" : "Valider la commande"}
@@ -1383,6 +1530,95 @@ function Recapitulatif({
           Relevé complet des stocks (PDF)
         </a>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Échanges en cours avec les autres Del Arte pour ce produit : ce qui est
+ * réservé (à leur rendre) et ce qu'ils nous doivent, avec le choix de
+ * commander selon la préconisation ou de compter sur leur retour.
+ */
+function EchangesFiche({
+  ligne,
+  etat,
+  stockTotal,
+  stockDispo,
+  selon,
+  avecRetour,
+  fige,
+  onRetour,
+}: {
+  ligne: LigneSaisie;
+  etat: Etat;
+  stockTotal: number | null;
+  stockDispo: number | null;
+  selon: number;
+  avecRetour: number;
+  fige: boolean;
+  onRetour: (retour: number) => void;
+}) {
+  const u = ligne.unite ?? "u";
+  const dus = ligne.echanges.filter((e) => e.nousDevons > 0);
+  const attendus = ligne.echanges.filter((e) => e.ilsDoivent > 0);
+  const compte = etat.retour !== null && etat.retour > 0;
+  return (
+    <div className="space-y-2 rounded-2xl border border-neutre-100 p-4 text-sm">
+      <p className="font-titre text-base font-semibold">Échanges Del Arte</p>
+      {dus.map((e) => (
+        <p key={`d${e.delArte}`} className="text-ambre-700">
+          <span className="font-semibold">
+            {qte(e.nousDevons)} {u} à rendre
+          </span>{" "}
+          à {e.delArte} : réservé, ne compte pas dans votre stock.
+        </p>
+      ))}
+      {attendus.map((e) => (
+        <p key={`a${e.delArte}`} className="text-vert-800">
+          <span className="font-semibold">
+            {e.delArte} vous doit {qte(e.ilsDoivent)} {u}
+          </span>
+          .
+        </p>
+      ))}
+      {stockTotal !== null && stockDispo !== null && stockDispo !== stockTotal ? (
+        <p className="rounded-xl bg-neutre-50 px-3 py-2 text-neutre-700">
+          Stock retenu pour la commande :{" "}
+          <span className="font-semibold">
+            {qte(stockDispo)} {u}
+          </span>{" "}
+          (compté {qte(stockTotal)} {u}).
+        </p>
+      ) : null}
+      {attendus.length > 0 && stockTotal !== null ? (
+        <div>
+          <p className="text-xs text-neutre-500">
+            Commander selon la préconisation, ou compter sur leur retour cette semaine ?
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              disabled={fige}
+              onClick={() => onRetour(0)}
+              className={`min-h-12 rounded-xl px-2 text-xs font-semibold ${
+                etat.retour === 0
+                  ? "bg-neutre-900 text-white"
+                  : "border border-neutre-200 text-neutre-700"
+              }`}
+            >
+              Commander ({selon} colis)
+            </button>
+            <button
+              disabled={fige}
+              onClick={() => onRetour(ligne.duNous)}
+              className={`min-h-12 rounded-xl px-2 text-xs font-semibold ${
+                compte ? "bg-vert-700 text-white" : "border border-neutre-200 text-neutre-700"
+              }`}
+            >
+              Compter sur le retour ({avecRetour} colis)
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
