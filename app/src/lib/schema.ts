@@ -82,6 +82,10 @@ export type Database = {
     };
     Views: {
       cmd_historique: { Row: PointHistorique; Relationships: [] };
+      cmd_del_arte_soldes: {
+        Row: { del_arte: string; produit_id: number; nous_devons: number; ils_doivent: number };
+        Relationships: [];
+      };
     };
     Functions: {
       cmd_commande: {
