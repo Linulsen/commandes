@@ -221,10 +221,21 @@ export async function getInventaire(id: number) {
 
   // Tout le catalogue, y compris les produits retirés de la carte et hors
   // commande : on peut en trouver dans un lieu où on ne les attendait pas.
-  const tous = await selectAll<ProduitInv>(() =>
-    db().from("cmd_produits").select(COLONNES_PRODUIT).order("id"),
-  );
+  const [tous, emplacements] = await Promise.all([
+    selectAll<ProduitInv>(() =>
+      db().from("cmd_produits").select(COLONNES_PRODUIT).order("id"),
+    ),
+    // Rang d'un article dans un emplacement secondaire (ordre de rangement).
+    selectAll<{ produit_id: number; zone_id: number; rang: number | null }>(() =>
+      db()
+        .from("cmd_produit_emplacements")
+        .select("produit_id,zone_id,rang")
+        .order("produit_id")
+        .order("zone_id"),
+    ),
+  ]);
   const produits = new Map(tous.map((p) => [p.id, p]));
+  const rangSecondaire = new Map(emplacements.map((e) => [`${e.produit_id}:${e.zone_id}`, e.rang]));
 
   const lieux: Lieu[] = zones.map((z) => ({
     id: z.id,
@@ -244,7 +255,7 @@ export async function getInventaire(id: number) {
       produitId,
       zoneId,
       nom: p.nom,
-      rang: p.rang ?? null,
+      rang: principal ? (p.rang ?? null) : (rangSecondaire.get(cle) ?? null),
       conditionnement: p.conditionnement,
       unite: p.unite,
       fact: Number(p.fact),

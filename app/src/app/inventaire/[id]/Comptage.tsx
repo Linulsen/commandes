@@ -302,7 +302,8 @@ export default function Comptage({
       produitId: p.produitId,
       zoneId: onglet,
       nom: p.nom,
-      rang: p.rang,
+      // Le rang du catalogue vaut pour le lieu principal seulement.
+      rang: p.lieuPrincipal === onglet ? p.rang : null,
       conditionnement: p.conditionnement,
       unite: p.unite,
       fact: p.fact,
@@ -499,7 +500,13 @@ export default function Comptage({
             : "calc(var(--barre-basse) + env(safe-area-inset-bottom) + 1rem)",
         }}
       >
-        {!terme ? <ChoixTri tri={tri} onTri={setTri} lieuId={onglet} /> : null}
+        {!terme ? (
+          <ChoixTri
+            tri={tri}
+            onTri={setTri}
+            lienReglage={`/rangement?lieu=${onglet}&inventaire=${inventaireId}`}
+          />
+        ) : null}
 
         {visibles.length === 0 ? (
           <p className="rounded-2xl border border-neutre-100 bg-white p-4 text-sm text-neutre-500">

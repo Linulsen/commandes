@@ -8,7 +8,8 @@ import { alphabetique } from "@/lib/tri-commun";
 import CodeResponsable from "../CodeResponsable";
 
 /**
- * Réglage de l'ordre de rangement d'un lieu, en parcourant les étagères
+ * Réglage de l'ordre de rangement d'un lieu d'inventaire (articles actifs,
+ * retirés encore en stock, emplacements secondaires), en parcourant les étagères
  * (méthode demandée par Nicolas le 11/10/2026) : on se place sur une
  * position (la 1 au départ), on cherche un article par son nom, on le
  * touche. Il prend cette place, les suivants se décalent d'un cran, et le
@@ -21,11 +22,14 @@ import CodeResponsable from "../CodeResponsable";
 export default function Rangement({
   lieux,
   lieuId,
+  inventaireId,
   produits,
   deverrouille: deverrouilleInitial,
 }: {
   lieux: LieuRangement[];
   lieuId: number;
+  /** Inventaire d'où l'on vient, pour y revenir en changeant de lieu. */
+  inventaireId: number | null;
   produits: ProduitRangement[];
   /** Session responsable déjà ouverte sur cet appareil. */
   deverrouille: boolean;
@@ -112,7 +116,7 @@ export default function Rangement({
     if (modifie && !window.confirm("L’ordre de ce lieu n’est pas enregistré. Changer de lieu quand même ?")) {
       return;
     }
-    router.push(`/rangement?lieu=${id}`);
+    router.push(`/rangement?lieu=${id}${inventaireId ? `&inventaire=${inventaireId}` : ""}`);
   };
 
   const enregistrer = async () => {
@@ -283,7 +287,7 @@ export default function Rangement({
 
         {liste.length === 0 ? (
           <p className="rounded-2xl border border-neutre-100 bg-white p-4 text-sm text-neutre-500">
-            Aucun produit actif dans ce lieu.
+            Aucun article de l’inventaire dans ce lieu.
           </p>
         ) : (
           <ol className="overflow-hidden rounded-2xl border border-neutre-100 bg-white shadow-sm">
@@ -315,6 +319,12 @@ export default function Rangement({
                         {p.unite ? <span>{p.unite}</span> : null}
                         {p.fournisseur ? <span>{p.fournisseur}</span> : null}
                         {p.comptage ? <span>comptage seul</span> : null}
+                        {p.secondaire ? <span>aussi rangé ailleurs</span> : null}
+                        {p.inactif ? (
+                          <span className="rounded-full bg-ambre-50 px-1.5 text-[11px] font-semibold text-ambre-700">
+                            retiré de la carte
+                          </span>
+                        ) : null}
                         {p.rang === null ? (
                           <span className="rounded-full bg-neutre-100 px-1.5 text-[11px] font-semibold text-neutre-700">
                             à placer

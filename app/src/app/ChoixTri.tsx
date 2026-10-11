@@ -5,17 +5,18 @@ import type { Tri } from "@/lib/tri-commun";
 
 /**
  * Bascule entre l'ordre alphabétique et l'ordre de rangement, au-dessus de la
- * liste des produits d'une chambre. Le lien mène au réglage de l'ordre.
+ * liste des produits d'une chambre. L'ordre lui-même ne se règle que depuis
+ * l'inventaire : seul l'écran d'inventaire passe `lienReglage`.
  */
 export default function ChoixTri({
   tri,
   onTri,
-  lieuId,
+  lienReglage,
 }: {
   tri: Tri;
   onTri: (t: Tri) => void;
-  /** Lieu ouvert, pour arriver directement dessus sur la page de réglage. */
-  lieuId?: number;
+  /** Page de réglage de l'ordre, sur le lieu ouvert (inventaire seulement). */
+  lienReglage?: string;
 }) {
   const options: { valeur: Tri; libelle: string }[] = [
     { valeur: "alpha", libelle: "A → Z" },
@@ -42,9 +43,9 @@ export default function ChoixTri({
           </button>
         ))}
       </div>
-      {tri === "rangement" ? (
+      {tri === "rangement" && lienReglage ? (
         <Link
-          href={lieuId ? `/rangement?lieu=${lieuId}` : "/rangement"}
+          href={lienReglage}
           className="flex min-h-9 items-center rounded-lg px-1 text-sm text-neutre-500 underline decoration-neutre-200 underline-offset-4"
         >
           Modifier l’ordre

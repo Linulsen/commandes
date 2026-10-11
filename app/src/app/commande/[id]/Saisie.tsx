@@ -604,7 +604,7 @@ export default function Saisie({
         ) : null}
 
         {onglet !== "recap" && !terme ? (
-          <ChoixTri tri={tri} onTri={setTri} lieuId={onglet} />
+          <ChoixTri tri={tri} onTri={setTri} />
         ) : null}
 
         {onglet === "recap" ? null : visibles.length === 0 ? (
