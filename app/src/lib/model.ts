@@ -296,14 +296,19 @@ export async function getAccueil(): Promise<ResumeFournisseur[]> {
   const brouillons = sessions.filter((s) => s.statut === "brouillon");
   const compte = new Map<number, { saisis: number; total: number }>();
   if (brouillons.length) {
-    const lignes = await selectAll<Pick<Ligne, "session_id" | "stock">>(() =>
+    // Les produits retirés (inactifs) restent dans un relevé commencé avant
+    // leur retrait mais ne s'affichent plus à l'écran de relevé : on ne les
+    // compte pas, pour que l'accueil donne le même compteur (ex. 60/60).
+    const actifs = new Set(produits.filter((p) => p.actif).map((p) => p.id));
+    const lignes = await selectAll<Pick<Ligne, "session_id" | "stock" | "produit_id">>(() =>
       sb()
         .from("cmd_lignes")
-        .select("session_id,stock")
+        .select("session_id,stock,produit_id")
         .in("session_id", brouillons.map((s) => s.id))
         .order("id"),
     );
     for (const l of lignes) {
+      if (!actifs.has(l.produit_id)) continue;
       const c = compte.get(l.session_id) ?? { saisis: 0, total: 0 };
       c.total += 1;
       if (l.stock !== null) c.saisis += 1;
