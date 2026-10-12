@@ -14,3 +14,7 @@ comment on column cmd_produits.sans_carton is
 update cmd_produits set sans_carton = true
  where unite = 'BAC'
    and (nom ilike 'glace%' or nom ilike 'sorbet%');
+
+-- Pots Häagen-Dazs : comptés au pot seulement (confirmé par Nicolas le 12/10/2026).
+update cmd_produits set sans_carton = true
+ where nom ilike '%haagen%';
