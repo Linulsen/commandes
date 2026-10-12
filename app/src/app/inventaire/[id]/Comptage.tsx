@@ -282,14 +282,14 @@ export default function Comptage({
   const visibles = lignes.filter(
     (l) =>
       (terme && tousLieux ? true : l.zoneId === onglet) &&
-      (!terme || normaliser(l.nom).includes(terme)),
+      (!terme || normaliser(`${l.nom} ${l.nomComplet}`).includes(terme)),
   );
   const nomLieuOuvert = lieux.find((z) => z.id === onglet)?.nom ?? "ce lieu";
   const dejaIci = new Set(lignes.filter((l) => l.zoneId === onglet).map((l) => l.produitId));
   const aAjouter =
     !fige && terme.length >= 2 && !tousLieux
       ? catalogue
-          .filter((p) => !dejaIci.has(p.produitId) && normaliser(p.nom).includes(terme))
+          .filter((p) => !dejaIci.has(p.produitId) && normaliser(`${p.nom} ${p.nomComplet}`).includes(terme))
           .slice(0, 15)
       : [];
 
@@ -302,6 +302,7 @@ export default function Comptage({
       produitId: p.produitId,
       zoneId: onglet,
       nom: p.nom,
+      nomComplet: p.nomComplet,
       // Le rang du catalogue vaut pour le lieu principal seulement.
       rang: p.lieuPrincipal === onglet ? p.rang : null,
       conditionnement: p.conditionnement,

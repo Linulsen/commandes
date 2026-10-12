@@ -22,7 +22,9 @@ export type LieuRangement = { id: number; nom: string; ordre: number };
 
 export type ProduitRangement = {
   id: number;
+  /** Libellé affiché : le libellé court s'il existe. */
   nom: string;
+  nomComplet: string;
   conditionnement: string | null;
   unite: string | null;
   rang: number | null;
@@ -40,6 +42,7 @@ type ProduitBrut = {
   zone_id: number;
   lieu_id: number | null;
   nom: string;
+  nom_court: string | null;
   conditionnement: string | null;
   unite: string | null;
   rang: number | null;
@@ -75,7 +78,7 @@ async function articlesDuLieu(lieuId: number) {
     selectAll<ProduitBrut>(() =>
       db()
         .from("cmd_produits")
-        .select("id,zone_id,lieu_id,nom,conditionnement,unite,rang,actif,compte_pour")
+        .select("id,zone_id,lieu_id,nom,nom_court,conditionnement,unite,rang,actif,compte_pour")
         .in("id", ids)
         .order("id"),
     ),
@@ -128,7 +131,8 @@ export async function getProduitsRangement(lieuId: number): Promise<ProduitRange
       const f = fournisseurDeZone.get(p.zone_id) ?? null;
       return {
         id: p.id,
-        nom: p.nom,
+        nom: p.nom_court || p.nom,
+        nomComplet: p.nom,
         conditionnement: p.conditionnement,
         unite: p.unite,
         rang: p.rangIci,

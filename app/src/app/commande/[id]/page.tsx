@@ -46,7 +46,8 @@ export default async function Commande({
         lignes={commande.lignes.map((l) => ({
           produitId: l.produit.id,
           zoneId: l.zone.id,
-          nom: l.produit.nom,
+          nom: l.produit.nom_court || l.produit.nom,
+          nomComplet: l.produit.nom,
           rang: l.produit.rang ?? null,
           conditionnement: l.produit.conditionnement,
           unite: l.produit.unite,

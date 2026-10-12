@@ -28,6 +28,8 @@ export type Produit = {
   fact: number;
   actif: boolean;
   ordre: number;
+  /** Libellé court d'affichage (relevé, inventaire, rangement) ; null : `nom`. */
+  nom_court?: string | null;
   /** Lieu d'inventaire, quand la chambre de commande n'est pas un lieu réel. */
   lieu_id?: number | null;
   /**

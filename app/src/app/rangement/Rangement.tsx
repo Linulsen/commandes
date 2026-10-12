@@ -77,7 +77,7 @@ export default function Rangement({
     () =>
       terme
         ? liste
-            .filter((p) => normaliser(p.nom).includes(terme))
+            .filter((p) => normaliser(`${p.nom} ${p.nomComplet}`).includes(terme))
             .sort((a, b) => alphabetique(a.nom, b.nom))
             .slice(0, 8)
         : [],

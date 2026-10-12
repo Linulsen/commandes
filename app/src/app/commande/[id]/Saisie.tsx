@@ -23,7 +23,10 @@ import Pave, { frappeDe, frapper, montrerLigne, type Frappe, type Raccourci } fr
 export type LigneSaisie = {
   produitId: number;
   zoneId: number;
+  /** Libellé affiché : le libellé court s'il existe. */
   nom: string;
+  /** Nom complet du produit, pour la recherche. */
+  nomComplet: string;
   /** Place dans l'ordre de rangement ; null : pas encore placé. */
   rang: number | null;
   conditionnement: string | null;
@@ -464,7 +467,7 @@ export default function Saisie({
 
   const terme = recherche ? normaliser(recherche.trim()) : "";
   const visibles = terme
-    ? lignesTriees.filter((l) => normaliser(l.nom).includes(terme))
+    ? lignesTriees.filter((l) => normaliser(`${l.nom} ${l.nomComplet}`).includes(terme))
     : lignesTriees.filter(
         (l) => l.zoneId === onglet && (!resteSeul || !masques.has(l.produitId)),
       );

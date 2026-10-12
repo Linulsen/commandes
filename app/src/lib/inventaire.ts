@@ -32,7 +32,10 @@ export type Lieu = { id: number; nom: string; ordre: number; secondaire: boolean
 export type LigneInventaire = {
   produitId: number;
   zoneId: number;
+  /** Libellé affiché : le libellé court s'il existe. */
   nom: string;
+  /** Nom complet, pour la recherche. */
+  nomComplet: string;
   /** Place dans l'ordre de rangement ; null : pas encore placé. */
   rang: number | null;
   conditionnement: string | null;
@@ -56,6 +59,7 @@ export type LigneInventaire = {
 export type ProduitCatalogue = {
   produitId: number;
   nom: string;
+  nomComplet: string;
   rang: number | null;
   conditionnement: string | null;
   unite: string | null;
@@ -91,10 +95,11 @@ type ProduitInv = {
   unite_contenance: "kg" | "L" | null;
   saisie_detail: boolean;
   rang: number | null;
+  nom_court: string | null;
 };
 
 const COLONNES_PRODUIT =
-  "id,zone_id,lieu_id,nom,conditionnement,unite,fact,actif,contenance,unite_contenance,saisie_detail,rang";
+  "id,zone_id,lieu_id,nom,conditionnement,unite,fact,actif,contenance,unite_contenance,saisie_detail,rang,nom_court";
 
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
@@ -254,7 +259,8 @@ export async function getInventaire(id: number) {
     parCle.set(cle, {
       produitId,
       zoneId,
-      nom: p.nom,
+      nom: p.nom_court || p.nom,
+      nomComplet: p.nom,
       rang: principal ? (p.rang ?? null) : (rangSecondaire.get(cle) ?? null),
       conditionnement: p.conditionnement,
       unite: p.unite,
@@ -292,7 +298,8 @@ export async function getInventaire(id: number) {
   const catalogue: ProduitCatalogue[] = tous
     .map((p) => ({
       produitId: p.id,
-      nom: p.nom,
+      nom: p.nom_court || p.nom,
+      nomComplet: p.nom,
       rang: p.rang ?? null,
       conditionnement: p.conditionnement,
       unite: p.unite,
