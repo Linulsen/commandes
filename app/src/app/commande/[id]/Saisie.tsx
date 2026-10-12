@@ -1397,7 +1397,7 @@ function Fiche({
             <h3 className="px-1 font-titre text-xs font-bold uppercase tracking-[0.14em] text-neutre-500">
               Historique
             </h3>
-            <Historique ligne={ligne} />
+            <Historique ligne={ligne} etat={etat} stockTotal={stockTotal} colis={colis} />
           </div>
         </div>
       </div>
@@ -1409,9 +1409,28 @@ function Fiche({
  * Les quatre derniers relevés, datés. L'ancien affichage alignait des
  * consommations sans date (« 3 · 5 · 2 ») : impossible de savoir de quelle
  * semaine on parlait.
+ *
+ * La consommation d'une ligne est celle de la semaine qui finit à sa date :
+ * lue seule, la ligne du dernier relevé passait pour « consommé depuis ».
+ * La première ligne, « Aujourd'hui », donne donc ce qui est sorti depuis le
+ * dernier relevé, calculé avec le stock en train d'être saisi.
  */
-function Historique({ ligne }: { ligne: LigneSaisie }) {
+function Historique({
+  ligne,
+  etat,
+  stockTotal,
+  colis,
+}: {
+  ligne: LigneSaisie;
+  etat: Etat;
+  stockTotal: number | null;
+  colis: number;
+}) {
   const u = ligne.unite ?? "u";
+  const consoDuJour =
+    ligne.plafond !== null && stockTotal !== null
+      ? arrondi(ligne.plafond - stockTotal - (etat.perte ?? 0))
+      : null;
   return (
     <div className="mt-1.5 px-1 text-xs text-neutre-500">
       <p>
@@ -1429,6 +1448,12 @@ function Historique({ ligne }: { ligne: LigneSaisie }) {
             </tr>
           </thead>
           <tbody>
+            <tr className="border-t border-neutre-50 font-semibold text-neutre-800">
+              <td className="py-1 text-left">Aujourd’hui</td>
+              <td className="py-1 text-right">{stockTotal === null ? "—" : qte(stockTotal)}</td>
+              <td className="py-1 text-right">{colis ? `${qte(colis)} colis` : "—"}</td>
+              <td className="py-1 text-right">{consoDuJour === null ? "—" : qte(consoDuJour)}</td>
+            </tr>
             {ligne.releves.map((r) => (
               <tr key={r.date} className="border-t border-neutre-50">
                 <td className="py-1 text-left text-neutre-700">{dateCourte(r.date)}</td>
@@ -1450,8 +1475,11 @@ function Historique({ ligne }: { ligne: LigneSaisie }) {
         <p className="mt-1">Aucun relevé précédent.</p>
       )}
       <p className="mt-1.5 text-[11px] text-neutre-400">
-        Quantités en {u}. « Consommé » : ce qui est sorti de la chambre depuis le
-        relevé d’avant, pertes déduites.
+        Quantités en {u}. « Consommé » : ce qui est sorti de la chambre entre le
+        relevé précédent et la date de la ligne, pertes déduites. « Aujourd’hui » :
+        depuis le dernier relevé
+        {ligne.releves[0] ? ` (${dateCourte(ligne.releves[0].date)})` : ""}, avec le
+        stock en cours de saisie.
       </p>
     </div>
   );
