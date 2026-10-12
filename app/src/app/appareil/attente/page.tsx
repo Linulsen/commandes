@@ -69,7 +69,8 @@ export default async function PageAttente({
               id="code"
               name="code"
               type="password"
-              inputMode="numeric"
+              autoCapitalize="none"
+              autoCorrect="off"
               autoComplete="off"
               className="mt-2 min-h-13 w-full rounded-xl border border-rouge-800 bg-rouge-800 px-4 py-3 text-base text-white outline-none focus:border-white"
             />

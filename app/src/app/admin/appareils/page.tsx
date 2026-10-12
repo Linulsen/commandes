@@ -182,7 +182,7 @@ export default async function PageAppareils({
             <form action={entrer} className="rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
               <label className="block text-sm font-semibold">
                 Code Administrateur
-                <input name="code" type="password" inputMode="numeric" autoComplete="off" autoFocus className={champ} />
+                <input name="code" type="password" autoCapitalize="none" autoCorrect="off" autoComplete="off" autoFocus className={champ} />
               </label>
               <button className="mt-4 min-h-12 w-full rounded-xl bg-rouge-700 font-titre text-sm font-semibold text-white">
                 Entrer
