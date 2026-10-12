@@ -76,6 +76,10 @@ export default async function Commande({
           fiabilite: l.prevision.fiabilite,
           nbPoints: l.prevision.nbPoints,
           stockPrecedent: l.stockPrecedent,
+          plafond: l.plafond,
+          stockVerifie:
+            l.ligne.stock_verifie == null ? null : Number(l.ligne.stock_verifie),
+          aConsomme: l.prevision.aConsomme,
           joursHorizon: l.prevision.joursHorizon,
           reserve: l.reserve,
           duNous: l.duNous,

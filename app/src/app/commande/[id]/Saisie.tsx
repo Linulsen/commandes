@@ -55,6 +55,15 @@ export type LigneSaisie = {
   fiabilite: Fiabilite;
   nbPoints: number;
   stockPrecedent: number | null;
+  /**
+   * Ce qui pouvait rester en chambre (relevé précédent + entrées − sorties
+   * enregistrées). Compter plus serait une consommation négative.
+   */
+  plafond: number | null;
+  /** Stock confirmé malgré tout la dernière fois qu'il dépassait le plafond. */
+  stockVerifie: number | null;
+  /** Vendu sur au moins une des 8 dernières périodes. */
+  aConsomme: boolean;
   joursHorizon: number;
   releves: ReleveResume[];
   /** Emprunté à un autre Del Arte, pas encore rendu : réservé, hors stock disponible. */
@@ -81,6 +90,8 @@ type Etat = {
    * préconisation ; null : question pas encore tranchée.
    */
   retour: number | null;
+  /** Stock confirmé alors qu'il dépassait ce qui pouvait rester. */
+  verifie: number | null;
 };
 
 /** Ce que le pavé est en train de remplir. */
@@ -111,7 +122,20 @@ const LIBELLE_FIABILITE: Record<Fiabilite, string> = {
 };
 
 const estTendu = (l: LigneSaisie, e: Etat) =>
-  e.stock !== null && l.consoPrevue > 0 && e.stock < l.consoPrevue * 0.5;
+  e.stock !== null &&
+  ((l.consoPrevue > 0 && e.stock < l.consoPrevue * 0.5) || (e.stock <= 0 && l.aConsomme));
+
+const arrondi = (x: number) => Math.round(x * 1000) / 1000;
+
+/**
+ * Stock compté supérieur à ce qui pouvait rester : la consommation serait
+ * négative, ce qui n'existe pas. `total` : stock avec lignes de comptage.
+ */
+const depassePlafond = (l: LigneSaisie, e: Etat, total: number | null) =>
+  l.comptePour === null &&
+  l.plafond !== null &&
+  total !== null &&
+  arrondi(total + (e.perte ?? 0)) > arrondi(l.plafond);
 
 export default function Saisie({
   session,
@@ -170,6 +194,7 @@ export default function Saisie({
       force: l.colis !== null && l.colis !== l.suggestionEnregistree,
       perte: l.perte,
       retour: l.retourAttendu,
+      verifie: l.stockVerifie,
     }),
     [],
   );
@@ -205,6 +230,10 @@ export default function Saisie({
           "retourAttendu" in corps
             ? ((corps.retourAttendu as number | null) ?? null)
             : (suivant[l.produitId]?.retour ?? l.retourAttendu),
+        verifie:
+          "stockVerifie" in corps
+            ? ((corps.stockVerifie as number | null) ?? null)
+            : (suivant[l.produitId]?.verifie ?? l.stockVerifie),
       };
       change = true;
     }
@@ -268,7 +297,13 @@ export default function Saisie({
     (l: LigneSaisie, e: Etat, retour = e.retour) =>
       l.comptePour !== null
         ? 0
-        : suggerer(l.consoPrevue, stockDispo(l, e, retour), l.fact, Number(session.marge)),
+        : suggerer(
+            l.consoPrevue,
+            stockDispo(l, e, retour),
+            l.fact,
+            Number(session.marge),
+            l.aConsomme,
+          ),
     [session.marge, stockDispo],
   );
 
@@ -284,6 +319,21 @@ export default function Saisie({
       stockTotal(l, e) !== null &&
       propositionDe(l, e, 0) > 0,
     [propositionDe, stockTotal],
+  );
+
+  /**
+   * Stock plus élevé que ce qui pouvait rester, pas encore confirmé : à
+   * corriger ou à confirmer avant de valider.
+   */
+  const stockAVerifier = useCallback(
+    (l: LigneSaisie, e: Etat) => {
+      const total = stockTotal(l, e);
+      return (
+        depassePlafond(l, e, total) &&
+        (e.verifie === null || arrondi(e.verifie) !== arrondi(total!))
+      );
+    },
+    [stockTotal],
   );
 
   const colisRetenu = useCallback(
@@ -310,6 +360,7 @@ export default function Saisie({
         perte: etat.perte,
         force: etat.force,
         ...(l.duNous > 0 ? { retourAttendu: etat.retour } : {}),
+        stockVerifie: etat.verifie,
         ...(l.parCarton ? { stockColis: etat.stock === null ? null : etat.cartons } : {}),
       }),
     [colisRetenu, propositionDe, session.id],
@@ -458,6 +509,7 @@ export default function Saisie({
 
   const saisis = lignes.filter((l) => etatDe(l).stock !== null).length;
   const questions = lignes.filter((l) => questionOuverte(l, etatDe(l)));
+  const aVerifier = lignes.filter((l) => stockAVerifier(l, etatDe(l)));
   const aCommander = lignes
     .map((l) => ({ l, colis: colisRetenu(l, etatDe(l)), etat: etatDe(l) }))
     .filter((x) => x.colis > 0);
@@ -663,6 +715,12 @@ export default function Saisie({
               avecRetour: propositionDe(l, etatDe(l), l.duNous),
             }))}
             onRetour={(produitId, retour) => modifier(produitId, { retour })}
+            aVerifier={aVerifier.map((l) => ({
+              l,
+              total: stockTotal(l, etatDe(l))!,
+            }))}
+            onConfirmer={(produitId, total) => modifier(produitId, { verifie: total })}
+            onCorriger={(produitId) => ouvrirPave(produitId, "stock")}
             onMarge={async (marge) => {
               const r = await fetch(`/api/session/${session.id}`, {
                 method: "PATCH",
@@ -717,6 +775,7 @@ export default function Saisie({
                   colis={colisRetenu(l, etat)}
                   stockTotal={stockTotal(l, etat)}
                   question={questionOuverte(l, etat)}
+                  aVerifier={stockAVerifier(l, etat)}
                   fige={fige}
                   zone={terme ? nomZone.get(l.zoneId) : undefined}
                   enAttente={envoi.cles.has(`releve:${session.id}:${l.produitId}`)}
@@ -802,6 +861,9 @@ export default function Saisie({
                   ligneCible.consoPrevue > 0
                     ? `besoin ${qte(ligneCible.consoPrevue)} ${ligneCible.unite ?? "u"}`
                     : null,
+                  stockAVerifier(ligneCible, etatDe(ligneCible))
+                    ? `⚠ plus que possible (max ${qte(ligneCible.plafond!)})`
+                    : null,
                 ]
                   .filter(Boolean)
                   .join(" · ") || (ligneCible.conditionnement ?? undefined)
@@ -830,6 +892,12 @@ export default function Saisie({
           stockDispo={stockDispo(ligneFiche, etatDe(ligneFiche))}
           selon={propositionDe(ligneFiche, etatDe(ligneFiche), 0)}
           avecRetour={propositionDe(ligneFiche, etatDe(ligneFiche), ligneFiche.duNous)}
+          aVerifier={stockAVerifier(ligneFiche, etatDe(ligneFiche))}
+          depasse={depassePlafond(
+            ligneFiche,
+            etatDe(ligneFiche),
+            stockTotal(ligneFiche, etatDe(ligneFiche)),
+          )}
           zone={nomZone.get(ligneFiche.zoneId)}
           fige={fige}
           enAttente={envoi.cles.has(`releve:${session.id}:${ligneFiche.produitId}`)}
@@ -856,6 +924,7 @@ const LigneProduit = memo(function LigneProduit({
   colis,
   stockTotal,
   question,
+  aVerifier,
   fige,
   zone,
   enAttente,
@@ -871,6 +940,8 @@ const LigneProduit = memo(function LigneProduit({
   stockTotal: number | null;
   /** Un autre Del Arte nous doit ce produit : commander ou attendre ? */
   question: boolean;
+  /** Stock plus élevé que ce qui pouvait rester, pas encore confirmé. */
+  aVerifier: boolean;
   fige: boolean;
   zone?: string;
   enAttente: boolean;
@@ -950,6 +1021,11 @@ const LigneProduit = memo(function LigneProduit({
           {question ? (
             <span className="rounded-full bg-rouge-700 px-1.5 text-[11px] font-semibold text-white">
               à décider
+            </span>
+          ) : null}
+          {aVerifier ? (
+            <span className="rounded-full bg-rouge-700 px-1.5 text-[11px] font-semibold text-white">
+              stock impossible
             </span>
           ) : null}
           {enAttente ? <span className="text-ambre-700">sur le téléphone</span> : null}
@@ -1101,6 +1177,8 @@ function Fiche({
   stockDispo,
   selon,
   avecRetour,
+  aVerifier,
+  depasse,
   zone,
   fige,
   enAttente,
@@ -1119,6 +1197,10 @@ function Fiche({
   /** Proposition sans compter sur un retour, et en comptant dessus. */
   selon: number;
   avecRetour: number;
+  /** Stock au-dessus de ce qui pouvait rester, pas encore confirmé. */
+  aVerifier: boolean;
+  /** Stock au-dessus de ce qui pouvait rester (confirmé ou non). */
+  depasse: boolean;
   zone?: string;
   fige: boolean;
   enAttente: boolean;
@@ -1195,6 +1277,17 @@ function Fiche({
               </span>{" "}
               en tout. C’est ce total qui sert au calcul.
             </p>
+          ) : null}
+
+          {depasse && stockTotal !== null && ligne.plafond !== null ? (
+            <StockImpossible
+              ligne={ligne}
+              total={stockTotal}
+              ouvert={aVerifier}
+              fige={fige}
+              onCorriger={onStock}
+              onConfirmer={() => onModifier(ligne.produitId, { verifie: stockTotal })}
+            />
           ) : null}
 
           {ligne.comptePour === null && (ligne.reserve > 0 || ligne.duNous > 0) ? (
@@ -1372,6 +1465,9 @@ function Recapitulatif({
   fige,
   questions,
   onRetour,
+  aVerifier,
+  onConfirmer,
+  onCorriger,
   onMarge,
   onValider,
   onRouvrir,
@@ -1385,6 +1481,10 @@ function Recapitulatif({
   /** Produits qu'un autre Del Arte nous doit : commander ou attendre ? */
   questions: { l: LigneSaisie; selon: number; avecRetour: number }[];
   onRetour: (produitId: number, retour: number) => void;
+  /** Stocks plus élevés que ce qui pouvait rester : à corriger ou confirmer. */
+  aVerifier: { l: LigneSaisie; total: number }[];
+  onConfirmer: (produitId: number, total: number) => void;
+  onCorriger: (produitId: number) => void;
   onMarge: (marge: number) => void;
   onValider: () => void;
   onRouvrir: () => void;
@@ -1413,6 +1513,34 @@ function Recapitulatif({
             <option value="1">Large (+100 %)</option>
           </select>
         </div>
+      ) : null}
+
+      {!fige && aVerifier.length ? (
+        <section className="sans-impression mb-3 rounded-2xl border border-rouge-100 bg-rouge-50 p-4">
+          <h2 className="font-titre text-sm font-semibold text-rouge-700">
+            Stock impossible : à vérifier avant de valider
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-rouge-700">
+            Vous avez compté plus qu’il ne pouvait en rester (dernier relevé, plus
+            les livraisons et dépannages enregistrés depuis). La consommation
+            serait négative.
+          </p>
+          <ul className="mt-3 space-y-3">
+            {aVerifier.map(({ l, total }) => (
+              <li key={l.produitId} className="rounded-xl bg-white p-3">
+                <StockImpossible
+                  ligne={l}
+                  total={total}
+                  ouvert
+                  fige={fige}
+                  avecNom
+                  onCorriger={() => onCorriger(l.produitId)}
+                  onConfirmer={() => onConfirmer(l.produitId, total)}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       {!fige && questions.length ? (
@@ -1541,7 +1669,7 @@ function Recapitulatif({
         ) : (
           <button
             onClick={onValider}
-            disabled={saisis === 0 || questions.length > 0}
+            disabled={saisis === 0 || questions.length > 0 || aVerifier.length > 0}
             className="min-h-13 w-full rounded-xl bg-vert-700 px-4 font-titre text-base font-semibold text-white disabled:opacity-35"
           >
             {aCommander.length === 0 ? "Valider sans commande" : "Valider la commande"}
@@ -1649,6 +1777,94 @@ function EchangesFiche({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Stock compté supérieur à ce qui pouvait rester. On le corrige, ou on le
+ * confirme : c'est alors qu'une entrée n'a pas été enregistrée (livraison,
+ * dépannage, prêt d'un Del Arte) ou que le relevé précédent était faux.
+ */
+/** « dernier relevé 5 BAC, rien reçu depuis », « …, 4 BAC reçus depuis ». */
+const depuis = (precedent: number, max: number, u: string) => {
+  const ecart = arrondi(max - precedent);
+  const suite =
+    ecart > 0
+      ? `${qte(ecart)} ${u} reçu${ecart > 1 ? "s" : ""} depuis`
+      : ecart < 0
+        ? `${qte(-ecart)} ${u} sorti${-ecart > 1 ? "s" : ""} depuis (perte, prêt, rendu)`
+        : "rien reçu depuis";
+  return `dernier relevé ${qte(precedent)} ${u}, ${suite}`;
+};
+
+function StockImpossible({
+  ligne,
+  total,
+  ouvert,
+  fige,
+  avecNom = false,
+  onCorriger,
+  onConfirmer,
+}: {
+  ligne: LigneSaisie;
+  total: number;
+  /** Pas encore confirmé : on pose la question. */
+  ouvert: boolean;
+  fige: boolean;
+  avecNom?: boolean;
+  onCorriger: () => void;
+  onConfirmer: () => void;
+}) {
+  const u = ligne.unite ?? "u";
+  const max = ligne.plafond ?? 0;
+  const explication = (
+    <p className={avecNom ? "text-xs text-neutre-500" : "text-sm text-rouge-700"}>
+      Compté <span className="font-semibold">{qte(total)} {u}</span>, mais il ne
+      pouvait pas en rester plus de{" "}
+      <span className="font-semibold">
+        {qte(max)} {u}
+      </span>
+      {ligne.stockPrecedent !== null ? ` (${depuis(ligne.stockPrecedent, max, u)})` : ""}
+      .
+    </p>
+  );
+  if (!ouvert) {
+    return (
+      <div className="rounded-2xl border border-ambre-100 bg-ambre-50 p-4 text-sm text-ambre-700">
+        <p className="font-semibold">Stock confirmé au-dessus du maximum possible</p>
+        <p className="mt-1">
+          Si une livraison, un dépannage ou un prêt d’un Del Arte n’a pas été
+          enregistré, déclarez-le dans Réceptions : sinon la consommation de la
+          semaine sera fausse.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className={avecNom ? "" : "rounded-2xl border border-rouge-100 bg-rouge-50 p-4"}>
+      {avecNom ? (
+        <p className="text-sm font-semibold">{ligne.nom}</p>
+      ) : (
+        <p className="font-titre text-base font-semibold text-rouge-700">Stock impossible</p>
+      )}
+      {explication}
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button
+          disabled={fige}
+          onClick={onCorriger}
+          className="min-h-12 rounded-xl bg-rouge-700 px-2 text-xs font-semibold text-white"
+        >
+          Corriger le stock
+        </button>
+        <button
+          disabled={fige}
+          onClick={onConfirmer}
+          className="min-h-12 rounded-xl border border-neutre-200 bg-white px-2 text-xs font-semibold text-neutre-700"
+        >
+          Le compte est juste
+        </button>
+      </div>
     </div>
   );
 }

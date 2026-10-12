@@ -18,6 +18,8 @@ export type Prevision = {
   nbPoints: number;
   /** Relevés où le stock a augmenté sans livraison : comptage douteux. */
   anomalies: number;
+  /** Le produit s'est vendu sur au moins une des 8 dernières périodes. */
+  aConsomme: boolean;
 };
 
 const moyenne = (xs: number[]) =>
@@ -107,6 +109,7 @@ export function prevoir(
     variation,
     nbPoints: nbRelevesTotal ?? n,
     anomalies,
+    aConsomme: serie.slice(-8).some((s) => s.conso > 0),
   };
 }
 
@@ -124,11 +127,15 @@ export function suggerer(
   stock: number | null,
   fact: number,
   marge: number,
+  aConsomme = false,
 ): number {
   const f = fact > 0 ? fact : 1;
   const enStock = stock ?? 0;
   const besoin = consoPrevue * (1 + marge) - enStock;
-  if (besoin <= 0) return 0;
+  // Sécurité : plus rien en chambre d'un produit qui se vend. Un relevé faux
+  // peut faire tomber la prévision à zéro (consommation négative) ; on ne
+  // laisse pas pour autant le restaurant sans rien.
+  if (besoin <= 0) return aConsomme && stock !== null && enStock <= 0 ? 1 : 0;
   let colis = Math.max(1, Math.round(besoin / f));
   while (enStock + colis * f < consoPrevue && colis < 999) colis += 1;
   return colis;
@@ -157,6 +164,7 @@ export type Alerte = "rupture" | "surstock" | "nouveau" | null;
 
 export function alerte(p: Prevision, stock: number | null): Alerte {
   if (p.nbPoints < 2) return "nouveau";
+  if (stock !== null && stock <= 0 && p.aConsomme) return "rupture";
   if (stock === null || p.consoPrevue <= 0) return null;
   if (stock < p.consoPrevue * 0.5) return "rupture";
   if (stock > p.consoPrevue * 3) return "surstock";

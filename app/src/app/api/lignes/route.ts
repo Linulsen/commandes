@@ -56,6 +56,8 @@ async function enregistrer(lignes: Brute[]) {
     if ("stockColis" in l) ligne.stock_colis = nombre(l.stockColis);
     // Produit qu'un autre Del Arte nous doit : compte-t-on sur son retour ?
     if ("retourAttendu" in l) ligne.retour_attendu = nombre(l.retourAttendu);
+    // Stock plus élevé que possible, confirmé malgré tout.
+    if ("stockVerifie" in l) ligne.stock_verifie = nombre(l.stockVerifie);
     aEcrire.set(`${sessionId}:${produitId}`, ligne);
   });
 

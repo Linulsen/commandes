@@ -34,6 +34,12 @@ export type LigneEnrichie = {
   couverture: number | null;
   /** Stock relevé la fois précédente, pour situer la saisie en cours. */
   stockPrecedent: number | null;
+  /**
+   * Ce qui pouvait rester en chambre : stock précédent + entrées − sorties
+   * enregistrées. Compter plus, c'est une consommation négative. Null : pas
+   * de relevé précédent, ou ligne de comptage.
+   */
+  plafond: number | null;
   /** Les quatre derniers relevés, du plus récent au plus ancien. */
   releves: ReleveResume[];
   /**
@@ -177,6 +183,7 @@ export async function getCommande(sessionId: number) {
       perte: brut.ligne.perte ?? null,
       stock_colis: brut.ligne.stock_colis ?? null,
       retour_attendu: brut.ligne.retour_attendu ?? null,
+      stock_verifie: brut.ligne.stock_verifie ?? null,
       maj_le: brut.ligne.maj_le ?? null,
     };
     const ajout = rattache.get(produit.id);
@@ -205,10 +212,12 @@ export async function getCommande(sessionId: number) {
             dispo,
             Number(produit.fact),
             Number(session.marge),
+            prevision.aConsomme,
           ),
       alerte: comptage ? null : alerte(prevision, dispo),
       couverture: comptage ? null : couverture(prevision, dispo),
       stockPrecedent: brut.stockPrecedent,
+      plafond: comptage || brut.plafond == null ? null : Number(brut.plafond),
       releves: brut.releves ?? [],
       stockTotal,
       reserve,

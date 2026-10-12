@@ -80,6 +80,11 @@ export type Ligne = {
    * commander selon la préconisation.
    */
   retour_attendu?: number | null;
+  /**
+   * Stock confirmé au relevé alors qu'il dépassait ce qui pouvait rester
+   * (consommation négative) : la question ne se repose pas pour ce stock-là.
+   */
+  stock_verifie?: number | null;
   maj_le: string | null;
 };
 
@@ -152,6 +157,8 @@ export type CommandeRpc = {
     ligne: Partial<Ligne>;
     nbReleves: number;
     stockPrecedent: number | null;
+    /** Stock maximal possible à ce relevé (null : pas de relevé précédent). */
+    plafond?: number | null;
     serie: PointConso[];
     releves: ReleveResume[];
   }[];
