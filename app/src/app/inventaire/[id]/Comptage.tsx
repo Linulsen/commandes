@@ -39,7 +39,7 @@ const cleDe = (l: { produitId: number; zoneId: number }) => `${l.produitId}:${l.
 /** Les cases que montre un produit, dans l'ordre de saisie. */
 function champsDe(l: LigneInventaire): Champ[] {
   const c: Champ[] = [];
-  if (l.fact > 1) c.push("colis");
+  if (l.fact > 1 && !l.sansCarton) c.push("colis");
   c.push("unites");
   if (l.saisieDetail && l.contenance) c.push("detail");
   return c;
@@ -303,6 +303,7 @@ export default function Comptage({
       zoneId: onglet,
       nom: p.nom,
       nomComplet: p.nomComplet,
+      sansCarton: p.sansCarton,
       // Le rang du catalogue vaut pour le lieu principal seulement.
       rang: p.lieuPrincipal === onglet ? p.rang : null,
       conditionnement: p.conditionnement,

@@ -36,6 +36,8 @@ export type LigneInventaire = {
   nom: string;
   /** Nom complet, pour la recherche. */
   nomComplet: string;
+  /** Compté seulement dans l'unité, sans case colis (glaces en bac). */
+  sansCarton: boolean;
   /** Place dans l'ordre de rangement ; null : pas encore placé. */
   rang: number | null;
   conditionnement: string | null;
@@ -60,6 +62,7 @@ export type ProduitCatalogue = {
   produitId: number;
   nom: string;
   nomComplet: string;
+  sansCarton: boolean;
   rang: number | null;
   conditionnement: string | null;
   unite: string | null;
@@ -96,10 +99,11 @@ type ProduitInv = {
   saisie_detail: boolean;
   rang: number | null;
   nom_court: string | null;
+  sans_carton: boolean;
 };
 
 const COLONNES_PRODUIT =
-  "id,zone_id,lieu_id,nom,conditionnement,unite,fact,actif,contenance,unite_contenance,saisie_detail,rang,nom_court";
+  "id,zone_id,lieu_id,nom,conditionnement,unite,fact,actif,contenance,unite_contenance,saisie_detail,rang,nom_court,sans_carton";
 
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
@@ -261,6 +265,7 @@ export async function getInventaire(id: number) {
       zoneId,
       nom: p.nom_court || p.nom,
       nomComplet: p.nom,
+      sansCarton: p.sans_carton === true,
       rang: principal ? (p.rang ?? null) : (rangSecondaire.get(cle) ?? null),
       conditionnement: p.conditionnement,
       unite: p.unite,
@@ -300,6 +305,7 @@ export async function getInventaire(id: number) {
       produitId: p.id,
       nom: p.nom_court || p.nom,
       nomComplet: p.nom,
+      sansCarton: p.sans_carton === true,
       rang: p.rang ?? null,
       conditionnement: p.conditionnement,
       unite: p.unite,

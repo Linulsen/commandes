@@ -30,6 +30,8 @@ export type Produit = {
   ordre: number;
   /** Libellé court d'affichage (relevé, inventaire, rangement) ; null : `nom`. */
   nom_court?: string | null;
+  /** Compté seulement dans l'unité, jamais au carton (glaces en bac). */
+  sans_carton?: boolean;
   /** Lieu d'inventaire, quand la chambre de commande n'est pas un lieu réel. */
   lieu_id?: number | null;
   /**

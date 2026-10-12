@@ -67,6 +67,7 @@ export default async function Commande({
           parCarton:
             l.zone.saisie_colis === true &&
             l.produit.compte_pour == null &&
+            l.produit.sans_carton !== true &&
             Number(l.produit.fact) > 1,
           majLe: l.ligne.maj_le ? Date.parse(l.ligne.maj_le) : 0,
           suggestionEnregistree:
