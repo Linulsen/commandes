@@ -114,12 +114,39 @@ export default function Saisie({
   session,
   zones,
   lignes,
+  chargeLe,
 }: {
   session: Session;
   zones: Zone[];
   lignes: LigneSaisie[];
+  /** Heure du serveur (ms) quand la page a été calculée. */
+  chargeLe: number;
 }) {
   const router = useRouter();
+
+  // Un relevé rouvert par le bouton retour, ou laissé ouvert pendant qu'on
+  // changeait l'ordre de rangement depuis l'inventaire, réaffichait la liste
+  // de son premier chargement. Revenu à l'écran, il se recharge (les saisies
+  // en cours ne sont pas touchées : elles vivent dans `etats`).
+  const dernierChargement = useRef(chargeLe);
+  useEffect(() => {
+    dernierChargement.current = Math.max(dernierChargement.current, chargeLe);
+  }, [chargeLe]);
+  useEffect(() => {
+    const rafraichir = () => {
+      if (document.visibilityState !== "visible" || !navigator.onLine) return;
+      if (Date.now() - dernierChargement.current < 30_000) return;
+      dernierChargement.current = Date.now();
+      router.refresh();
+    };
+    rafraichir();
+    document.addEventListener("visibilitychange", rafraichir);
+    window.addEventListener("pageshow", rafraichir);
+    return () => {
+      document.removeEventListener("visibilitychange", rafraichir);
+      window.removeEventListener("pageshow", rafraichir);
+    };
+  }, [router]);
   const fige = session.statut === "validee";
   const envoi = useFileAttente();
   const [onglet, setOnglet] = useState<number | "recap">(zones[0]?.id ?? "recap");

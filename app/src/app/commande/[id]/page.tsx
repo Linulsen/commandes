@@ -42,6 +42,7 @@ export default async function Commande({
       <Saisie
         session={commande.session}
         zones={commande.zones}
+        chargeLe={Date.now()}
         lignes={commande.lignes.map((l) => ({
           produitId: l.produit.id,
           zoneId: l.zone.id,
