@@ -52,6 +52,8 @@ export default function Rangement({
   const champ = useRef<HTMLInputElement>(null);
   const repere = useRef<HTMLLIElement>(null);
   const suivreCurseur = useRef(false);
+  // Article dont on change le lieu (fenêtre ouverte).
+  const [aDeplacer, setADeplacer] = useState<ProduitRangement | null>(null);
 
   const modifie = liste.map((p) => p.id).join(",") !== enregistre;
   const nonPlaces = useMemo(() => liste.filter((p) => p.rang === null).length, [liste]);
@@ -160,6 +162,47 @@ export default function Rangement({
     setDernier(null);
     setRecherche("");
     setEtat("");
+  };
+
+  /**
+   * Change l'article de lieu (ou retire un emplacement secondaire). Il quitte
+   * la liste de ce lieu tout de suite ; l'ordre en cours de réglage est gardé.
+   */
+  const deplacer = async (p: ProduitRangement, versLieu: number | null) => {
+    setEtat("envoi");
+    const r = await fetch("/api/rangement/lieu", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ produitId: p.id, deLieu: lieuId, versLieu }),
+    }).catch(() => null);
+    if (r?.ok) {
+      const i = position.get(p.id) ?? liste.length;
+      setListe((l) => l.filter((x) => x.id !== p.id));
+      setEnregistre((e) =>
+        e
+          .split(",")
+          .filter((id) => id && Number(id) !== p.id)
+          .join(","),
+      );
+      if (i < curseur) setCurseur((c) => c - 1);
+      setDernier(null);
+      setADeplacer(null);
+      const vers = lieux.find((l) => l.id === versLieu)?.nom;
+      setEtat(vers ? `« ${p.nom} » est maintenant en ${vers}.` : `« ${p.nom} » retiré de ce lieu.`);
+      return;
+    }
+    const corps = (await r?.json().catch(() => null)) as
+      | { erreur?: string; besoinCode?: boolean }
+      | null;
+    setADeplacer(null);
+    if (corps?.besoinCode) {
+      setDeverrouille(false);
+      setExpire(true);
+      setEtat("");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setEtat(corps?.erreur ?? "Lieu non changé : vérifiez le réseau et réessayez.");
   };
 
   const nomLieu = lieux.find((l) => l.id === lieuId)?.nom ?? "";
@@ -299,10 +342,11 @@ export default function Rangement({
                     dernier === p.id ? "bg-vert-50" : ""
                   }`}
                 >
+                  <div className="flex items-stretch">
                   <button
                     onClick={() => positionner(i)}
                     disabled={!deverrouille}
-                    className="flex min-h-14 w-full items-center gap-3 py-2 pl-3 pr-3 text-left disabled:cursor-default"
+                    className="flex min-h-14 min-w-0 flex-1 items-center gap-3 py-2 pl-3 pr-3 text-left disabled:cursor-default"
                   >
                     <span
                       className={`w-7 shrink-0 text-right text-sm tabular-nums ${
@@ -333,6 +377,16 @@ export default function Rangement({
                       </span>
                     </span>
                   </button>
+                  {deverrouille ? (
+                    <button
+                      onClick={() => setADeplacer(p)}
+                      aria-label={`Changer « ${p.nom} » de lieu`}
+                      className="flex min-h-14 shrink-0 items-center px-3 text-xs font-semibold text-rouge-700 underline decoration-rouge-200 underline-offset-4"
+                    >
+                      Changer de lieu
+                    </button>
+                  ) : null}
+                  </div>
                 </li>
               );
               return deverrouille && i === curseur ? [repereCurseur, ligne] : [ligne];
@@ -366,6 +420,8 @@ export default function Rangement({
                 "Enregistrement…"
               ) : etat === "ok" ? (
                 "Ordre enregistré."
+              ) : etat.startsWith("« ") ? (
+                <span className="text-vert-700">{etat}</span>
               ) : etat ? (
                 <span className="text-rouge-700">{etat}</span>
               ) : modifie ? (
@@ -394,6 +450,101 @@ export default function Rangement({
           </div>
         </footer>
       ) : null}
+
+      {aDeplacer ? (
+        <ChoixLieu
+          produit={aDeplacer}
+          lieux={lieux.filter((l) => l.id !== lieuId)}
+          nomLieu={nomLieu}
+          envoi={etat === "envoi"}
+          onChoisir={(versLieu) => deplacer(aDeplacer, versLieu)}
+          onFermer={() => setADeplacer(null)}
+        />
+      ) : null}
     </>
+  );
+}
+
+/** Fenêtre « Changer de lieu » : le nouveau lieu de l'article. */
+function ChoixLieu({
+  produit,
+  lieux,
+  nomLieu,
+  envoi,
+  onChoisir,
+  onFermer,
+}: {
+  produit: ProduitRangement;
+  lieux: LieuRangement[];
+  nomLieu: string;
+  envoi: boolean;
+  onChoisir: (versLieu: number | null) => void;
+  onFermer: () => void;
+}) {
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => e.key === "Escape" && onFermer();
+    window.addEventListener("keydown", f);
+    return () => window.removeEventListener("keydown", f);
+  }, [onFermer]);
+
+  return (
+    <div className="fixed inset-0 z-30" role="dialog" aria-modal="true" aria-label="Changer de lieu">
+      <button
+        aria-label="Fermer"
+        onClick={onFermer}
+        className="absolute inset-0 h-full w-full bg-neutre-950/40"
+      />
+      <div
+        className="absolute inset-x-0 bottom-0 mx-auto max-h-[88dvh] max-w-2xl overflow-y-auto overscroll-contain rounded-t-3xl bg-white shadow-xl"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+      >
+        <div className="sticky top-0 z-10 flex items-start gap-3 border-b border-neutre-100 bg-white px-4 pb-3 pt-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-neutre-400">
+              Changer de lieu
+            </p>
+            <h2 className="font-titre text-lg font-semibold leading-snug">{produit.nom}</h2>
+            <p className="text-xs text-neutre-500">
+              Aujourd’hui en {nomLieu}
+              {produit.secondaire ? " (en plus de son lieu principal)" : ""}
+            </p>
+          </div>
+          <button
+            onClick={onFermer}
+            className="min-h-12 shrink-0 rounded-xl bg-neutre-50 px-4 text-sm font-semibold text-neutre-700"
+          >
+            Fermer
+          </button>
+        </div>
+
+        <div className="space-y-2 px-4 pt-4">
+          <p className="px-1 text-sm text-neutre-700">
+            Où est-il rangé maintenant ? Il sera compté là aux prochains inventaires. La commande
+            ne change pas : même fournisseur, même chambre au relevé.
+          </p>
+          {lieux.map((l) => (
+            <button
+              key={l.id}
+              onClick={() => onChoisir(l.id)}
+              disabled={envoi}
+              className="flex min-h-14 w-full items-center rounded-2xl border-2 border-neutre-200 px-4 text-left font-titre text-base font-semibold disabled:opacity-50"
+            >
+              {l.nom}
+            </button>
+          ))}
+          {produit.secondaire ? (
+            <button
+              onClick={() => {
+                if (window.confirm(`Ne plus compter « ${produit.nom} » en ${nomLieu} ?`)) onChoisir(null);
+              }}
+              disabled={envoi}
+              className="mt-2 flex min-h-12 w-full items-center justify-center rounded-2xl px-4 text-sm font-semibold text-rouge-700 underline decoration-rouge-200 underline-offset-4 disabled:opacity-50"
+            >
+              Il n’est plus rangé ici : retirer ce lieu
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }

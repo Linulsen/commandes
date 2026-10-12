@@ -203,3 +203,97 @@ export async function enregistrerRangement(
   });
   return { modifies: aChanger.length };
 }
+
+/**
+ * Change un article de lieu d'inventaire (demandé par Nicolas le 12/10/2026).
+ *
+ * - Depuis son lieu principal : le lieu principal devient `versLieu`
+ *   (`lieu_id`, ou vide s'il redevient la chambre de commande). La chambre de
+ *   commande (`zone_id`) ne bouge pas : l'article reste commandé au même
+ *   fournisseur, dans la même chambre du relevé.
+ * - Depuis un emplacement secondaire : l'emplacement passe dans `versLieu`.
+ * - `versLieu` null : retire un emplacement secondaire (le lieu principal ne
+ *   peut pas être retiré, seulement changé).
+ *
+ * Si l'article était déjà rangé dans `versLieu` en secondaire, les deux se
+ * fondent et il garde la place qu'il y avait ; sinon il arrive « à placer ».
+ */
+export async function deplacerProduit(
+  produitId: number,
+  deLieu: number,
+  versLieu: number | null,
+  qui: { prenom: string | null; appareilId: string | null },
+) {
+  if (versLieu === deLieu) return { deplace: false };
+  const lieux = await getLieuxRangement();
+  const nom = new Map(lieux.map((l) => [l.id, l.nom]));
+  if (!nom.has(deLieu) || (versLieu !== null && !nom.has(versLieu))) {
+    throw new Error("Lieu inconnu");
+  }
+
+  const { data: p, error: e1 } = await db()
+    .from("cmd_produits")
+    .select("id,zone_id,lieu_id,nom")
+    .eq("id", produitId)
+    .maybeSingle();
+  if (e1) throw new Error(e1.message);
+  if (!p) throw new Error("Article inconnu : rechargez la page.");
+  const produit = p as { id: number; zone_id: number; lieu_id: number | null; nom: string };
+  const principal = produit.lieu_id ?? produit.zone_id;
+
+  const { data: emp, error: e2 } = await db()
+    .from("cmd_produit_emplacements")
+    .select("zone_id,rang")
+    .eq("produit_id", produitId);
+  if (e2) throw new Error(e2.message);
+  const secondaires = new Map(
+    ((emp ?? []) as { zone_id: number; rang: number | null }[])
+      .filter((e) => e.zone_id !== principal)
+      .map((e) => [e.zone_id, e.rang]),
+  );
+
+  const retirerSecondaire = async (zoneId: number) => {
+    const { error } = await db()
+      .from("cmd_produit_emplacements")
+      .delete()
+      .eq("produit_id", produitId)
+      .eq("zone_id", zoneId);
+    if (error) throw new Error(error.message);
+  };
+
+  if (deLieu === principal) {
+    if (versLieu === null) throw new Error("Le lieu principal ne peut pas être retiré, seulement changé.");
+    const rangLa = secondaires.get(versLieu) ?? null;
+    const { error } = await db()
+      .from("cmd_produits")
+      .update({ lieu_id: versLieu === produit.zone_id ? null : versLieu, rang: rangLa })
+      .eq("id", produitId);
+    if (error) throw new Error(error.message);
+    if (secondaires.has(versLieu)) await retirerSecondaire(versLieu);
+  } else if (secondaires.has(deLieu)) {
+    await retirerSecondaire(deLieu);
+    if (versLieu !== null && versLieu !== principal && !secondaires.has(versLieu)) {
+      const { error } = await db()
+        .from("cmd_produit_emplacements")
+        .insert({ produit_id: produitId, zone_id: versLieu, rang: null });
+      if (error) throw new Error(error.message);
+    }
+  } else {
+    throw new Error("Cet article n'est plus rangé dans ce lieu : rechargez la page.");
+  }
+
+  await db().from("app_journal").insert({
+    action: versLieu === null ? "emplacement_retire" : "lieu_change",
+    objet: "produit",
+    objet_id: String(produitId),
+    details: {
+      produit: produit.nom,
+      de: nom.get(deLieu),
+      vers: versLieu === null ? null : nom.get(versLieu),
+      principal: deLieu === principal,
+    },
+    prenom: qui.prenom,
+    appareil_id: qui.appareilId,
+  });
+  return { deplace: true };
+}
