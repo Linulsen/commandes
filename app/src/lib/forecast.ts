@@ -142,6 +142,46 @@ export function suggerer(
 }
 
 /**
+ * Produit nouveau : aucune période complète dans l'historique (un seul relevé
+ * validé avant celui-ci). La prévision tomberait à zéro et rien ne serait
+ * proposé, même en rupture — c'est arrivé le 12/10/2026 au mélange
+ * champignons-cèpes et aux rondelles de pommes de terre, entrés à la carte le
+ * 29/09.
+ *
+ * On se sert alors de ce qui est sorti depuis le dernier relevé, calculé avec
+ * le stock en cours de saisie (la ligne « Aujourd'hui » de la fiche) :
+ * plafond − stock − jeté, ramené à un rythme par jour sur `jours`.
+ *
+ * Dès qu'une période complète existe, la prévision habituelle reprend la main.
+ */
+export function prevoirSansHistorique(
+  p: { consoPrevue: number; aConsomme: boolean; nbPoints: number; joursHorizon: number },
+  plafond: number | null,
+  stock: number | null,
+  perte: number | null,
+  jours: number | null,
+): { consoPrevue: number; aConsomme: boolean } {
+  const inchange = { consoPrevue: p.consoPrevue, aConsomme: p.aConsomme };
+  if (p.nbPoints > 0 || plafond === null || stock === null || !jours || jours <= 0)
+    return inchange;
+  const conso = plafond - stock - (perte ?? 0);
+  if (conso <= 0) return inchange;
+  return {
+    consoPrevue: Math.round((conso / jours) * p.joursHorizon * 100) / 100,
+    aConsomme: true,
+  };
+}
+
+/** Nombre de jours entre deux dates « AAAA-MM-JJ ». */
+export function joursEntre(debut: string | null | undefined, fin: string): number | null {
+  if (!debut) return null;
+  const d = Date.parse(debut.slice(0, 10));
+  const f = Date.parse(fin.slice(0, 10));
+  if (Number.isNaN(d) || Number.isNaN(f)) return null;
+  return Math.max(1, Math.round((f - d) / 86_400_000));
+}
+
+/**
  * Stock qui sert à la proposition, compte tenu des échanges avec les autres
  * Del Arte :
  * - ce que nous devons (emprunté, pas encore rendu) est réservé : il est en
@@ -163,8 +203,9 @@ export function stockDisponible(
 export type Alerte = "rupture" | "surstock" | "nouveau" | null;
 
 export function alerte(p: Prevision, stock: number | null): Alerte {
-  if (p.nbPoints < 2) return "nouveau";
+  // Plus rien d'un produit qui se vend : rupture, même s'il est nouveau.
   if (stock !== null && stock <= 0 && p.aConsomme) return "rupture";
+  if (p.nbPoints < 2) return "nouveau";
   if (stock === null || p.consoPrevue <= 0) return null;
   if (stock < p.consoPrevue * 0.5) return "rupture";
   if (stock > p.consoPrevue * 3) return "surstock";

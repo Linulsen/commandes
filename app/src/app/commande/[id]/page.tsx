@@ -81,6 +81,7 @@ export default async function Commande({
             l.ligne.stock_verifie == null ? null : Number(l.ligne.stock_verifie),
           aConsomme: l.prevision.aConsomme,
           joursHorizon: l.prevision.joursHorizon,
+          joursDepuis: l.joursDepuis,
           reserve: l.reserve,
           duNous: l.duNous,
           echanges: l.echanges.map((e) => ({

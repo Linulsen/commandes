@@ -4,6 +4,8 @@ import {
   couverture,
   prevoir,
   stockDisponible,
+  joursEntre,
+  prevoirSansHistorique,
   suggerer,
   type Prevision,
 } from "./forecast";
@@ -42,6 +44,8 @@ export type LigneEnrichie = {
   plafond: number | null;
   /** Les quatre derniers relevés, du plus récent au plus ancien. */
   releves: ReleveResume[];
+  /** Jours entre le dernier relevé et celui-ci (null : aucun relevé avant). */
+  joursDepuis: number | null;
   /**
    * Stock qui sert au calcul : celui de la ligne, plus celui des lignes de
    * comptage qui lui sont rattachées (converti). Égal à `ligne.stock` sinon.
@@ -200,24 +204,38 @@ export async function getCommande(sessionId: number) {
       reserve,
       duNous > 0 && ligne.retour_attendu != null ? Number(ligne.retour_attendu) : null,
     );
+    const plafond = comptage || brut.plafond == null ? null : Number(brut.plafond);
+    const joursDepuis = joursEntre(brut.releves?.[0]?.date, session.date_commande);
+    // Produit nouveau : on se fie à ce qui est sorti depuis le dernier relevé.
+    const prevu = prevoirSansHistorique(
+      prevision,
+      plafond,
+      stockTotal,
+      ligne.perte === null ? null : Number(ligne.perte),
+      joursDepuis,
+    );
+    const prevue = { ...prevision, ...prevu };
     return {
       ligne,
       produit,
       zone: zoneParId.get(produit.zone_id)!,
+      // Prévision tirée de l'historique seul : l'écran de relevé refait
+      // l'ajustement « produit nouveau » avec le stock en cours de saisie.
       prevision,
       suggestion: comptage
         ? 0
         : suggerer(
-            prevision.consoPrevue,
+            prevue.consoPrevue,
             dispo,
             Number(produit.fact),
             Number(session.marge),
-            prevision.aConsomme,
+            prevue.aConsomme,
           ),
-      alerte: comptage ? null : alerte(prevision, dispo),
-      couverture: comptage ? null : couverture(prevision, dispo),
+      alerte: comptage ? null : alerte(prevue, dispo),
+      couverture: comptage ? null : couverture(prevue, dispo),
+      joursDepuis,
       stockPrecedent: brut.stockPrecedent,
-      plafond: comptage || brut.plafond == null ? null : Number(brut.plafond),
+      plafond,
       releves: brut.releves ?? [],
       stockTotal,
       reserve,

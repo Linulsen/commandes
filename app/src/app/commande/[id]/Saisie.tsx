@@ -3,7 +3,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { stockDisponible, suggerer, type Fiabilite } from "@/lib/forecast";
+import {
+  prevoirSansHistorique,
+  stockDisponible,
+  suggerer,
+  type Fiabilite,
+} from "@/lib/forecast";
 import { dateCourte, normaliser, qte } from "@/lib/format";
 import {
   lireNombre,
@@ -65,6 +70,8 @@ export type LigneSaisie = {
   /** Vendu sur au moins une des 8 dernières périodes. */
   aConsomme: boolean;
   joursHorizon: number;
+  /** Jours depuis le dernier relevé (null : aucun relevé avant). */
+  joursDepuis: number | null;
   releves: ReleveResume[];
   /** Emprunté à un autre Del Arte, pas encore rendu : réservé, hors stock disponible. */
   reserve: number;
@@ -121,9 +128,20 @@ const LIBELLE_FIABILITE: Record<Fiabilite, string> = {
   aucune: "Jamais relevée",
 };
 
-const estTendu = (l: LigneSaisie, e: Etat) =>
-  e.stock !== null &&
-  ((l.consoPrevue > 0 && e.stock < l.consoPrevue * 0.5) || (e.stock <= 0 && l.aConsomme));
+/**
+ * Besoin prévu et « se vend » : ceux de l'historique, ou, pour un produit
+ * nouveau (aucune période complète), ce qui est sorti depuis le dernier
+ * relevé avec le stock en cours de saisie. `stock` : stock total (lignes de
+ * comptage comprises).
+ */
+const prevuPour = (l: LigneSaisie, stock: number | null, perte: number | null) =>
+  prevoirSansHistorique(l, l.plafond, stock, perte, l.joursDepuis);
+
+const estTendu = (l: LigneSaisie, e: Etat) => {
+  if (e.stock === null) return false;
+  const p = prevuPour(l, e.stock, e.perte);
+  return (p.consoPrevue > 0 && e.stock < p.consoPrevue * 0.5) || (e.stock <= 0 && p.aConsomme);
+};
 
 const arrondi = (x: number) => Math.round(x * 1000) / 1000;
 
@@ -297,14 +315,17 @@ export default function Saisie({
     (l: LigneSaisie, e: Etat, retour = e.retour) =>
       l.comptePour !== null
         ? 0
-        : suggerer(
-            l.consoPrevue,
-            stockDispo(l, e, retour),
-            l.fact,
-            Number(session.marge),
-            l.aConsomme,
-          ),
-    [session.marge, stockDispo],
+        : (() => {
+            const p = prevuPour(l, stockTotal(l, e), e.perte);
+            return suggerer(
+              p.consoPrevue,
+              stockDispo(l, e, retour),
+              l.fact,
+              Number(session.marge),
+              p.aConsomme,
+            );
+          })(),
+    [session.marge, stockDispo, stockTotal],
   );
 
   /**
@@ -356,14 +377,14 @@ export default function Saisie({
         stock: etat.stock,
         colis: colisRetenu(l, etat),
         suggestion: propositionDe(l, etat),
-        consoPrevue: l.consoPrevue,
+        consoPrevue: prevuPour(l, stockTotal(l, etat), etat.perte).consoPrevue,
         perte: etat.perte,
         force: etat.force,
         ...(l.duNous > 0 ? { retourAttendu: etat.retour } : {}),
         stockVerifie: etat.verifie,
         ...(l.parCarton ? { stockColis: etat.stock === null ? null : etat.cartons } : {}),
       }),
-    [colisRetenu, propositionDe, session.id],
+    [colisRetenu, propositionDe, session.id, stockTotal],
   );
 
   const modifier = useCallback(
@@ -858,9 +879,16 @@ export default function Saisie({
                   ligneCible.stockPrecedent !== null
                     ? `dernier relevé ${qte(ligneCible.stockPrecedent)} ${ligneCible.unite ?? "u"}`
                     : null,
-                  ligneCible.consoPrevue > 0
-                    ? `besoin ${qte(ligneCible.consoPrevue)} ${ligneCible.unite ?? "u"}`
-                    : null,
+                  (() => {
+                    const besoin = prevuPour(
+                      ligneCible,
+                      stockTotal(ligneCible, etatDe(ligneCible)),
+                      etatDe(ligneCible).perte,
+                    ).consoPrevue;
+                    return besoin > 0
+                      ? `besoin ${qte(besoin)} ${ligneCible.unite ?? "u"}`
+                      : null;
+                  })(),
                   stockAVerifier(ligneCible, etatDe(ligneCible))
                     ? `⚠ plus que possible (max ${qte(ligneCible.plafond!)})`
                     : null,
@@ -1345,9 +1373,13 @@ function Fiche({
             </div>
             <div className="mt-2 space-y-0.5 text-xs leading-relaxed text-neutre-500">
               <p>
-                {ligne.consoPrevue > 0
-                  ? `Besoin estimé ${qte(ligne.consoPrevue)} ${u} sur ${ligne.joursHorizon} j`
-                  : "Pas de consommation mesurée"}
+                {(() => {
+                  const besoin = prevuPour(ligne, stockTotal, etat.perte).consoPrevue;
+                  if (besoin <= 0) return "Pas de consommation mesurée";
+                  return ligne.nbPoints > 0
+                    ? `Besoin estimé ${qte(besoin)} ${u} sur ${ligne.joursHorizon} j`
+                    : `Besoin estimé ${qte(besoin)} ${u} sur ${ligne.joursHorizon} j (d’après la sortie depuis le dernier relevé)`;
+                })()}
               </p>
               {derniereCommande ? (
                 <p>
