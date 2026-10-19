@@ -66,8 +66,8 @@ export async function GET(
   }
 
   const colonnes = [
-    { titre: "Produit", x: MARGE, w: largeur - 270 },
-    { titre: "Cond.", x: MARGE + largeur - 270, w: 60 },
+    { titre: "Produit", x: MARGE, w: largeur - 310 },
+    { titre: "Cond.", x: MARGE + largeur - 300, w: 85 },
     { titre: "Stock", x: MARGE + largeur - 210, w: 60 },
     { titre: "Colis", x: MARGE + largeur - 150, w: 50 },
     { titre: "Soit", x: MARGE + largeur - 100, w: 100 },
@@ -124,10 +124,19 @@ export async function GET(
         );
         doc.fontSize(10).fillColor("#171b24");
       }
-      const bas = doc.y;
-      doc.text(l.produit.conditionnement ?? "—", colonnes[1].x, y, {
-        width: colonnes[1].w,
-      });
+      let bas = doc.y;
+      // Nombre d'unités par colis : aide à pointer la livraison et le stock.
+      const fact = Number(l.produit.fact);
+      const cond = l.produit.conditionnement ?? "colis";
+      doc.text(
+        fact > 0 && fact !== 1
+          ? `${cond} de ${qte(fact)} ${l.produit.unite ?? "u"}`
+          : l.produit.conditionnement ?? "—",
+        colonnes[1].x,
+        y,
+        { width: colonnes[1].w },
+      );
+      bas = Math.max(bas, doc.y);
       doc.text(
         l.ligne.stock === null ? "—" : `${qte(Number(l.ligne.stock))} ${l.produit.unite ?? "u"}`,
         colonnes[2].x,
