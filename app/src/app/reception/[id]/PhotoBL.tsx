@@ -4,27 +4,68 @@ import { useRef, useState, type ReactNode } from "react";
 import { qte } from "@/lib/format";
 import type { LectureBL } from "@/lib/lecture-bl";
 
-type Photo = { url: string; type: "image/jpeg"; data: string };
+type Photo = { url: string; fichier: File };
+type ImageEnvoyee = { type: "image/jpeg"; data: string };
 
-const COTE_MAX = 1600;
 const PAGES_MAX = 6;
+/**
+ * Vercel refuse tout envoi de plus de 4,5 Mo (erreur 413). On garde une marge :
+ * l'ensemble des pages, en base64, ne dépasse pas 3,6 Mo.
+ */
+const BUDGET_TOTAL = 3_600_000;
+/** Réglages essayés du plus net au plus léger, jusqu'à tenir dans le budget. */
+const REGLAGES = [
+  { cote: 1600, qualite: 0.85 },
+  { cote: 1600, qualite: 0.7 },
+  { cote: 1400, qualite: 0.7 },
+  { cote: 1250, qualite: 0.65 },
+  { cote: 1100, qualite: 0.6 },
+  { cote: 1000, qualite: 0.5 },
+];
 
-/** Réduit la photo (les téléphones font 4000 px) et la rend en JPEG base64. */
-async function preparer(fichier: File): Promise<Photo> {
-  const url = URL.createObjectURL(fichier);
-  const img = await new Promise<HTMLImageElement>((ok, ko) => {
+function ouvrir(url: string) {
+  return new Promise<HTMLImageElement>((ok, ko) => {
     const i = new Image();
     i.onload = () => ok(i);
     i.onerror = () => ko(new Error("Image illisible"));
     i.src = url;
   });
-  const echelle = Math.min(1, COTE_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+}
+
+function encoder(img: HTMLImageElement, cote: number, qualite: number) {
+  const echelle = Math.min(1, cote / Math.max(img.naturalWidth, img.naturalHeight));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(img.naturalWidth * echelle);
   canvas.height = Math.round(img.naturalHeight * echelle);
   canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-  return { url, type: "image/jpeg", data: dataUrl.slice(dataUrl.indexOf(",") + 1) };
+  const dataUrl = canvas.toDataURL("image/jpeg", qualite);
+  return dataUrl.slice(dataUrl.indexOf(",") + 1);
+}
+
+/** Vérifie que la photo s'ouvre ; elle sera réduite au moment de l'envoi. */
+async function preparer(fichier: File): Promise<Photo> {
+  const url = URL.createObjectURL(fichier);
+  await ouvrir(url);
+  return { url, fichier };
+}
+
+/**
+ * Réduit les pages (les téléphones font 4000 px) en JPEG base64, de moins en
+ * moins lourd jusqu'à ce que chaque page tienne dans sa part du budget.
+ */
+async function compresser(photos: Photo[]): Promise<ImageEnvoyee[]> {
+  const parPage = BUDGET_TOTAL / photos.length;
+  const res: ImageEnvoyee[] = [];
+  for (const p of photos) {
+    const img = await ouvrir(p.url);
+    let data = "";
+    for (const { cote, qualite } of REGLAGES) {
+      data = encoder(img, cote, qualite);
+      if (data.length <= parPage) break;
+    }
+    res.push({ type: "image/jpeg", data });
+  }
+  return res;
 }
 
 /** Colis pour une livraison, unités de stock pour un dépannage. */
@@ -118,15 +159,26 @@ export default function PhotoBL({
   const lire = async () => {
     setEnCours(true);
     setErreur(null);
+    const images = await compresser(photos).catch(() => null);
+    if (!images) {
+      setEnCours(false);
+      setErreur("Une photo n’a pas pu être préparée.");
+      return;
+    }
     const r = await fetch(`/api/receptions/${receptionId}/photo`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ images: photos.map(({ type, data }) => ({ type, data })) }),
+      body: JSON.stringify({ images }),
     }).catch(() => null);
     const corps = await r?.json().catch(() => null);
     setEnCours(false);
     if (!r?.ok || !corps) {
-      setErreur(corps?.erreur ?? `Lecture impossible (${r ? `erreur ${r.status}` : "réseau ?"})`);
+      setErreur(
+        corps?.erreur ??
+          (r?.status === 413
+            ? "Photos trop lourdes pour l’envoi : retirez une page ou reprenez-les de plus près."
+            : `Lecture impossible (${r ? `erreur ${r.status}` : "réseau ?"})`),
+      );
       return;
     }
     const res = corps as LectureBL;
