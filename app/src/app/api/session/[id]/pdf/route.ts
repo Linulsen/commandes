@@ -37,7 +37,7 @@ export async function GET(
     .map((l) => ({ ...l, colis: quantiteRetenue(l) }))
     .filter((l) => (complet ? l.ligne.stock !== null || l.colis > 0 : l.colis > 0));
 
-  const doc = new PDFDocument({ size: "A4", margin: MARGE });
+  const doc = new PDFDocument({ size: "A4", margin: MARGE, bufferPages: true });
   const morceaux: Buffer[] = [];
   doc.on("data", (c: Buffer) => morceaux.push(c));
   const fini = new Promise<Buffer>((resolve) =>
@@ -177,6 +177,22 @@ export async function GET(
     doc.y,
     { width: largeur },
   );
+
+  // Numéros de page, posés une fois toutes les pages connues. La marge du bas
+  // est levée le temps d'écrire : sinon pdfkit ouvrirait une page de plus.
+  const pages = doc.bufferedPageRange();
+  for (let i = 0; i < pages.count; i++) {
+    doc.switchToPage(pages.start + i);
+    const basOriginal = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.font("Helvetica").fontSize(9).fillColor("#8b94a5");
+    doc.text(`Page ${i + 1} / ${pages.count}`, MARGE, doc.page.height - MARGE + 16, {
+      width: largeur,
+      align: "right",
+      lineBreak: false,
+    });
+    doc.page.margins.bottom = basOriginal;
+  }
 
   doc.end();
   const pdf = await fini;
