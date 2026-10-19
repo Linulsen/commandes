@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Entete from "../../Entete";
-import { getCommande, getFournisseurs } from "@/lib/model";
+import { getCommande, getFournisseurs, getLivraisonsNonReceptionnees } from "@/lib/model";
 import { dateLongue } from "@/lib/format";
 import Saisie from "./Saisie";
 
@@ -17,6 +17,14 @@ export default async function Commande({
   const commande = await getCommande(id);
   if (!commande) notFound();
   const fournisseurs = await getFournisseurs();
+  const livraisonsEnAttente =
+    commande.session.statut === "validee"
+      ? []
+      : await getLivraisonsNonReceptionnees(
+          commande.session.fournisseur_id,
+          commande.session.date_commande,
+          commande.session.id,
+        ).catch(() => []);
   const fournisseur = fournisseurs.find(
     (f) => f.id === commande.session.fournisseur_id,
   )!;
@@ -43,6 +51,7 @@ export default async function Commande({
         session={commande.session}
         zones={commande.zones}
         chargeLe={Date.now()}
+        livraisonsEnAttente={livraisonsEnAttente}
         lignes={commande.lignes.map((l) => ({
           produitId: l.produit.id,
           zoneId: l.zone.id,
@@ -82,6 +91,14 @@ export default async function Commande({
           aConsomme: l.prevision.aConsomme,
           joursHorizon: l.prevision.joursHorizon,
           joursDepuis: l.joursDepuis,
+          serie: l.prevision.serie.slice(-16).map((pt) => ({
+            date: "",
+            conso: Number(pt.conso),
+            jours: Number(pt.jours),
+            creneau: pt.creneau ?? "",
+          })),
+          creneau: commande.session.libelle || null,
+          creneauEnCours: l.creneauEnCours,
           reserve: l.reserve,
           duNous: l.duNous,
           echanges: l.echanges.map((e) => ({

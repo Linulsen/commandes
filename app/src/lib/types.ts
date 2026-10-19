@@ -159,6 +159,8 @@ export type CommandeRpc = {
     stockPrecedent: number | null;
     /** Stock maximal possible à ce relevé (null : pas de relevé précédent). */
     plafond?: number | null;
+    /** Créneau de la semaine en cours (libellé du relevé précédent). */
+    creneauEnCours?: string | null;
     serie: PointConso[];
     releves: ReleveResume[];
   }[];

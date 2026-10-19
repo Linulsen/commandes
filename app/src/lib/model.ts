@@ -5,7 +5,7 @@ import {
   prevoir,
   stockDisponible,
   joursEntre,
-  prevoirSansHistorique,
+  prevoirAvecReleveDuJour,
   suggerer,
   type Prevision,
 } from "./forecast";
@@ -46,6 +46,8 @@ export type LigneEnrichie = {
   releves: ReleveResume[];
   /** Jours entre le dernier relevé et celui-ci (null : aucun relevé avant). */
   joursDepuis: number | null;
+  /** Créneau de la semaine en cours (libellé du relevé précédent). */
+  creneauEnCours: string | null;
   /**
    * Stock qui sert au calcul : celui de la ligne, plus celui des lignes de
    * comptage qui lui sont rattachées (converti). Égal à `ligne.stock` sinon.
@@ -206,15 +208,20 @@ export async function getCommande(sessionId: number) {
     );
     const plafond = comptage || brut.plafond == null ? null : Number(brut.plafond);
     const joursDepuis = joursEntre(brut.releves?.[0]?.date, session.date_commande);
-    // Produit nouveau : on se fie à ce qui est sorti depuis le dernier relevé.
-    const prevu = prevoirSansHistorique(
-      prevision,
+    // Semaine en cours (stock du jour) ajoutée à l'historique ; à défaut,
+    // l'historique seul.
+    const prevu = prevoirAvecReleveDuJour(prevision, session.libelle || undefined, {
       plafond,
-      stockTotal,
-      ligne.perte === null ? null : Number(ligne.perte),
-      joursDepuis,
-    );
-    const prevue = { ...prevision, ...prevu };
+      stock: stockTotal,
+      perte: ligne.perte === null ? null : Number(ligne.perte),
+      jours: joursDepuis,
+      creneau: brut.creneauEnCours ?? null,
+      verifie:
+        ligne.stock_verifie !== null &&
+        stockTotal !== null &&
+        Math.abs(Number(ligne.stock_verifie) - stockTotal) < 0.0005,
+    });
+    const prevue = { ...prevision, ...(prevu ?? {}) };
     return {
       ligne,
       produit,
@@ -234,6 +241,7 @@ export async function getCommande(sessionId: number) {
       alerte: comptage ? null : alerte(prevue, dispo),
       couverture: comptage ? null : couverture(prevue, dispo),
       joursDepuis,
+      creneauEnCours: brut.creneauEnCours ?? null,
       stockPrecedent: brut.stockPrecedent,
       plafond,
       releves: brut.releves ?? [],
@@ -504,6 +512,64 @@ export async function getReceptionsAccueil() {
     fournisseurs,
     echanges,
   };
+}
+
+/**
+ * Commandes précédentes de ce fournisseur dont la livraison n'est pas
+ * réceptionnée (demandé par Nicolas le 19/10/2026). Le relevé du jour entre
+ * dans la prévision : une livraison non réceptionnée y compte comme arrivée
+ * telle que commandée, ce qui fausse la proposition si elle était incomplète.
+ * On regarde les 30 derniers jours (avant, l'historique vient du classeur,
+ * sans réceptions). Un relevé validé sans commande n'attend rien.
+ */
+export async function getLivraisonsNonReceptionnees(
+  fournisseurId: number,
+  avant: string,
+  sessionId: number,
+) {
+  const depuis = new Date(Date.parse(avant) - 30 * 864e5).toISOString().slice(0, 10);
+  const { data: sessions, error } = await sb()
+    .from("cmd_sessions")
+    .select("id,date_commande")
+    .eq("fournisseur_id", fournisseurId)
+    .eq("statut", "validee")
+    .neq("id", sessionId)
+    .lte("date_commande", avant)
+    .gte("date_commande", depuis)
+    .order("date_commande", { ascending: true });
+  if (error) throw new Error(error.message);
+  const liste = (sessions ?? []) as { id: number; date_commande: string }[];
+  if (!liste.length) return [];
+  const ids = liste.map((x) => x.id);
+  const [recs, lignes] = await Promise.all([
+    sb()
+      .from("cmd_receptions")
+      .select("id,session_id,statut")
+      .eq("type", "livraison")
+      .in("session_id", ids),
+    sb()
+      .from("cmd_lignes")
+      .select("session_id")
+      .in("session_id", ids)
+      // Même règle que quantiteRetenue : la quantité arrêtée, sinon la proposition.
+      .or("colis.gt.0,and(colis.is.null,stock.not.is.null,suggestion.gt.0)"),
+  ]);
+  if (recs.error) throw new Error(recs.error.message);
+  if (lignes.error) throw new Error(lignes.error.message);
+  const recParSession = new Map(
+    ((recs.data ?? []) as { id: number; session_id: number; statut: string }[]).map((r) => [
+      r.session_id,
+      r,
+    ]),
+  );
+  const avecCommande = new Set((lignes.data ?? []).map((l) => l.session_id as number));
+  return liste
+    .filter((x) => avecCommande.has(x.id) && recParSession.get(x.id)?.statut !== "validee")
+    .map((x) => ({
+      sessionId: x.id,
+      date: x.date_commande,
+      receptionId: recParSession.get(x.id)?.id ?? null,
+    }));
 }
 
 /**

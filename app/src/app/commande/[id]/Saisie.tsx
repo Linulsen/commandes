@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  prevoirSansHistorique,
+  prevoirAvecReleveDuJour,
   stockDisponible,
   suggerer,
   type Fiabilite,
@@ -20,7 +20,7 @@ import {
 import { useEcranAllume } from "@/lib/ecran";
 import { useTri } from "@/lib/tri";
 import { comparer } from "@/lib/tri-commun";
-import type { ReleveResume, Session, Zone } from "@/lib/types";
+import type { PointConso, ReleveResume, Session, Zone } from "@/lib/types";
 import EtatEnvoi from "../../EtatEnvoi";
 import ChoixTri from "../../ChoixTri";
 import Pave, { frappeDe, frapper, montrerLigne, type Frappe, type Raccourci } from "../../Pave";
@@ -72,6 +72,15 @@ export type LigneSaisie = {
   joursHorizon: number;
   /** Jours depuis le dernier relevé (null : aucun relevé avant). */
   joursDepuis: number | null;
+  /**
+   * Dernières périodes de l'historique (au plus 16), pour ajouter la semaine
+   * en cours à la prévision pendant la saisie.
+   */
+  serie: PointConso[];
+  /** Créneau de la commande (Cledor : mardi / vendredi). */
+  creneau: string | null;
+  /** Créneau de la semaine en cours (libellé du relevé précédent). */
+  creneauEnCours: string | null;
   releves: ReleveResume[];
   /** Emprunté à un autre Del Arte, pas encore rendu : réservé, hors stock disponible. */
   reserve: number;
@@ -134,16 +143,29 @@ const LIBELLE_FIABILITE: Record<Fiabilite, string> = {
  * relevé avec le stock en cours de saisie. `stock` : stock total (lignes de
  * comptage comprises).
  */
-const prevuPour = (l: LigneSaisie, stock: number | null, perte: number | null) =>
-  prevoirSansHistorique(l, l.plafond, stock, perte, l.joursDepuis);
+const arrondi = (x: number) => Math.round(x * 1000) / 1000;
+
+const prevuPour = (
+  l: LigneSaisie,
+  stock: number | null,
+  perte: number | null,
+  verifie: number | null = null,
+) =>
+  prevoirAvecReleveDuJour(l, l.creneau ?? undefined, {
+    plafond: l.plafond,
+    stock,
+    perte,
+    jours: l.joursDepuis,
+    creneau: l.creneauEnCours,
+    verifie: verifie !== null && stock !== null && arrondi(verifie) === arrondi(stock),
+  }) ?? { consoPrevue: l.consoPrevue, aConsomme: l.aConsomme };
 
 const estTendu = (l: LigneSaisie, e: Etat) => {
   if (e.stock === null) return false;
-  const p = prevuPour(l, e.stock, e.perte);
+  const p = prevuPour(l, e.stock, e.perte, e.verifie);
   return (p.consoPrevue > 0 && e.stock < p.consoPrevue * 0.5) || (e.stock <= 0 && p.aConsomme);
 };
 
-const arrondi = (x: number) => Math.round(x * 1000) / 1000;
 
 /**
  * Stock compté supérieur à ce qui pouvait rester : la consommation serait
@@ -160,12 +182,15 @@ export default function Saisie({
   zones,
   lignes,
   chargeLe,
+  livraisonsEnAttente = [],
 }: {
   session: Session;
   zones: Zone[];
   lignes: LigneSaisie[];
   /** Heure du serveur (ms) quand la page a été calculée. */
   chargeLe: number;
+  /** Commandes précédentes dont la livraison n'est pas réceptionnée. */
+  livraisonsEnAttente?: LivraisonEnAttente[];
 }) {
   const router = useRouter();
 
@@ -316,7 +341,7 @@ export default function Saisie({
       l.comptePour !== null
         ? 0
         : (() => {
-            const p = prevuPour(l, stockTotal(l, e), e.perte);
+            const p = prevuPour(l, stockTotal(l, e), e.perte, e.verifie);
             return suggerer(
               p.consoPrevue,
               stockDispo(l, e, retour),
@@ -377,7 +402,7 @@ export default function Saisie({
         stock: etat.stock,
         colis: colisRetenu(l, etat),
         suggestion: propositionDe(l, etat),
-        consoPrevue: prevuPour(l, stockTotal(l, etat), etat.perte).consoPrevue,
+        consoPrevue: prevuPour(l, stockTotal(l, etat), etat.perte, etat.verifie).consoPrevue,
         perte: etat.perte,
         force: etat.force,
         ...(l.duNous > 0 ? { retourAttendu: etat.retour } : {}),
@@ -723,6 +748,9 @@ export default function Saisie({
             : "calc(var(--barre-basse) + env(safe-area-inset-bottom) + 1rem)",
         }}
       >
+        {!fige && livraisonsEnAttente.length ? (
+          <LivraisonsAReceptionner livraisons={livraisonsEnAttente} />
+        ) : null}
         {onglet === "recap" ? (
           <Recapitulatif
             session={session}
@@ -752,6 +780,7 @@ export default function Saisie({
               else setEchec("Marge non enregistrée (réseau ?)");
             }}
             onValider={valider}
+            livraisonsEnAttente={livraisonsEnAttente.length}
             onRouvrir={async () => {
               const r = await fetch(`/api/session/${session.id}/valider`, {
                 method: "DELETE",
@@ -884,6 +913,7 @@ export default function Saisie({
                       ligneCible,
                       stockTotal(ligneCible, etatDe(ligneCible)),
                       etatDe(ligneCible).perte,
+                      etatDe(ligneCible).verifie,
                     ).consoPrevue;
                     return besoin > 0
                       ? `besoin ${qte(besoin)} ${ligneCible.unite ?? "u"}`
@@ -1374,7 +1404,7 @@ function Fiche({
             <div className="mt-2 space-y-0.5 text-xs leading-relaxed text-neutre-500">
               <p>
                 {(() => {
-                  const besoin = prevuPour(ligne, stockTotal, etat.perte).consoPrevue;
+                  const besoin = prevuPour(ligne, stockTotal, etat.perte, etat.verifie).consoPrevue;
                   if (besoin <= 0) return "Pas de consommation mesurée";
                   return ligne.nbPoints > 0
                     ? `Besoin estimé ${qte(besoin)} ${u} sur ${ligne.joursHorizon} j`
@@ -1517,6 +1547,59 @@ function Historique({
   );
 }
 
+export type LivraisonEnAttente = {
+  sessionId: number;
+  date: string;
+  receptionId: number | null;
+};
+
+/**
+ * Contrôle demandé par Nicolas le 19/10/2026 : le relevé du jour entre dans
+ * la prévision, et une livraison non réceptionnée y compte comme arrivée telle
+ * que commandée. Tant qu'elle n'est pas réceptionnée, la commande ne se valide
+ * pas. Si rien n'est arrivé, on réceptionne en ne cochant rien.
+ */
+function LivraisonsAReceptionner({ livraisons }: { livraisons: LivraisonEnAttente[] }) {
+  return (
+    <section className="sans-impression mb-3 rounded-2xl border border-rouge-100 bg-rouge-50 p-4">
+      <h2 className="font-titre text-sm font-semibold text-rouge-700">
+        {livraisons.length > 1 ? "Livraisons non réceptionnées" : "Livraison non réceptionnée"}
+      </h2>
+      <p className="mt-1 text-xs leading-relaxed text-rouge-700">
+        La proposition compte ce qui a été commandé comme livré. Réceptionnez
+        d’abord (en ne cochant que ce qui est sur le bon) : la commande ne se
+        valide pas avant.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {livraisons.map((x) => (
+          <li key={x.sessionId}>
+            {x.receptionId ? (
+              <Link
+                href={`/reception/${x.receptionId}`}
+                className="flex min-h-12 w-full items-center justify-between rounded-xl bg-white px-3 text-sm font-semibold text-neutre-800"
+              >
+                <span>Commande du {dateCourte(x.date)}</span>
+                <span className="text-rouge-700">Terminer la réception →</span>
+              </Link>
+            ) : (
+              <form action="/api/receptions" method="post">
+                <input type="hidden" name="session" value={x.sessionId} />
+                <button
+                  type="submit"
+                  className="flex min-h-12 w-full items-center justify-between rounded-xl bg-white px-3 text-sm font-semibold text-neutre-800"
+                >
+                  <span>Commande du {dateCourte(x.date)}</span>
+                  <span className="text-rouge-700">Réceptionner →</span>
+                </button>
+              </form>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Recapitulatif({
   session,
   zones,
@@ -1531,6 +1614,7 @@ function Recapitulatif({
   onMarge,
   onValider,
   onRouvrir,
+  livraisonsEnAttente,
 }: {
   session: Session;
   zones: Zone[];
@@ -1548,6 +1632,8 @@ function Recapitulatif({
   onMarge: (marge: number) => void;
   onValider: () => void;
   onRouvrir: () => void;
+  /** Livraisons précédentes pas encore réceptionnées : validation bloquée. */
+  livraisonsEnAttente: number;
 }) {
   return (
     <div>
@@ -1729,7 +1815,12 @@ function Recapitulatif({
         ) : (
           <button
             onClick={onValider}
-            disabled={saisis === 0 || questions.length > 0 || aVerifier.length > 0}
+            disabled={
+              saisis === 0 ||
+              questions.length > 0 ||
+              aVerifier.length > 0 ||
+              livraisonsEnAttente > 0
+            }
             className="min-h-13 w-full rounded-xl bg-vert-700 px-4 font-titre text-base font-semibold text-white disabled:opacity-35"
           >
             {aCommander.length === 0 ? "Valider sans commande" : "Valider la commande"}
