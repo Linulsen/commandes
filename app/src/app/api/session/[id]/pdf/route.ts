@@ -74,7 +74,7 @@ export async function GET(
   ];
 
   const enTeteTableau = () => {
-    doc.font("Helvetica-Bold").fontSize(9).fillColor("#8b94a5");
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("#4d5668");
     for (const c of colonnes) {
       doc.text(c.titre.toUpperCase(), c.x, doc.y, {
         width: c.w,
@@ -85,6 +85,30 @@ export async function GET(
     }
     doc.moveDown(1.2);
     doc.fillColor("#171b24");
+  };
+
+  // Titre d'emplacement : bandeau foncé, texte blanc, bien visible à
+  // l'impression, pour voir d'un coup d'œil où commence chaque chambre.
+  const bandeau = (titre: string, droite: string) => {
+    const h = 24;
+    const y = doc.y;
+    doc.rect(MARGE, y, largeur, h).fill("#2b3445");
+    doc.font("Helvetica-Bold").fontSize(13).fillColor("#ffffff");
+    doc.text(titre.toUpperCase(), MARGE + 10, y + 6, {
+      width: largeur - 100,
+      lineBreak: false,
+    });
+    if (droite) {
+      doc.font("Helvetica").fontSize(10);
+      doc.text(droite, MARGE + largeur - 90, y + 8, {
+        width: 80,
+        align: "right",
+        lineBreak: false,
+      });
+    }
+    doc.fillColor("#171b24");
+    doc.x = MARGE;
+    doc.y = y + h + 6;
   };
 
   const sautSiBesoin = (hauteur: number) => {
@@ -99,14 +123,16 @@ export async function GET(
     const dedans = aCommander.filter((l) => l.zone.id === zone.id);
     if (!dedans.length) continue;
 
-    sautSiBesoin(70);
-    doc.moveDown(0.6);
-    doc.font("Helvetica-Bold").fontSize(12).text(zone.nom, MARGE, doc.y);
-    doc.moveDown(0.4);
+    sautSiBesoin(90);
+    doc.moveDown(0.8);
+    bandeau(zone.nom, `${dedans.length} réf.`);
     enTeteTableau();
 
     for (const l of dedans) {
-      if (sautSiBesoin(28)) enTeteTableau();
+      if (sautSiBesoin(28)) {
+        bandeau(`${zone.nom} (suite)`, "");
+        enTeteTableau();
+      }
       const y = doc.y;
       doc.font("Helvetica").fontSize(10);
       doc.text(l.produit.nom, colonnes[0].x, y, { width: colonnes[0].w });
@@ -158,8 +184,8 @@ export async function GET(
       doc.y = Math.max(bas, y + 12);
       doc.moveDown(0.35);
       doc
-        .strokeColor("#ebedf1")
-        .lineWidth(0.5)
+        .strokeColor("#c9ced8")
+        .lineWidth(0.6)
         .moveTo(MARGE, doc.y)
         .lineTo(MARGE + largeur, doc.y)
         .stroke();
