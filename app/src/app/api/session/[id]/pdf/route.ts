@@ -68,8 +68,8 @@ export async function GET(
   const colonnes = [
     { titre: "Produit", x: MARGE, w: largeur - 310 },
     { titre: "Cond.", x: MARGE + largeur - 300, w: 85 },
-    { titre: "Stock", x: MARGE + largeur - 210, w: 60 },
-    { titre: "Colis", x: MARGE + largeur - 150, w: 50 },
+    { titre: "Stock", x: MARGE + largeur - 212, w: 72 },
+    { titre: "Colis", x: MARGE + largeur - 140, w: 40 },
     { titre: "Soit", x: MARGE + largeur - 100, w: 100 },
   ];
 
@@ -128,69 +128,74 @@ export async function GET(
     bandeau(zone.nom, `${dedans.length} réf.`);
     enTeteTableau();
 
-    for (const l of dedans) {
-      if (sautSiBesoin(28)) {
+    // Lignes plus lisibles (demandé par Nicolas le 19/10/2026) : texte en 11,
+    // une ligne sur deux sur fond gris clair pour suivre la ligne jusqu'au
+    // stock et aux colis. La hauteur est calculée avant d'écrire pour poser
+    // le fond sous toute la ligne, même si le nom tient sur deux lignes.
+    const TAILLE = 11;
+    const PETIT = 9;
+    const PAD = 5;
+    dedans.forEach((l, i) => {
+      const unite = l.produit.unite ?? "u";
+      const fact = Number(l.produit.fact);
+      const cond = l.produit.conditionnement ?? "colis";
+      // Nombre d'unités par colis : aide à pointer la livraison et le stock.
+      const texteCond =
+        fact > 0 && fact !== 1 ? `${cond} de ${qte(fact)} ${unite}` : l.produit.conditionnement ?? "—";
+      // Emprunté à un autre Del Arte : la commande comprend de quoi le rendre.
+      const aRendre = l.echanges
+        .filter((e) => e.nousDevons > 0)
+        .map((e) => `dont ${qte(e.nousDevons)} ${unite} à rendre à ${e.delArte}`)
+        .join(" · ");
+
+      doc.font("Helvetica").fontSize(TAILLE);
+      let hNom = doc.heightOfString(l.produit.nom, { width: colonnes[0].w });
+      if (aRendre) {
+        doc.fontSize(PETIT);
+        hNom += doc.heightOfString(aRendre, { width: colonnes[0].w });
+        doc.fontSize(TAILLE);
+      }
+      const hCond = doc.heightOfString(texteCond, { width: colonnes[1].w });
+      const h = Math.max(hNom, hCond, TAILLE * 1.2) + PAD * 2;
+
+      if (sautSiBesoin(h + 4)) {
         bandeau(`${zone.nom} (suite)`, "");
         enTeteTableau();
       }
-      const y = doc.y;
-      doc.font("Helvetica").fontSize(10);
+      const haut = doc.y;
+      if (i % 2 === 1) doc.rect(MARGE, haut, largeur, h).fill("#eef0f4");
+      const y = haut + PAD;
+
+      doc.font("Helvetica").fontSize(TAILLE).fillColor("#171b24");
       doc.text(l.produit.nom, colonnes[0].x, y, { width: colonnes[0].w });
-      // Emprunté à un autre Del Arte : la commande comprend de quoi le rendre.
-      const aRendre = l.echanges.filter((e) => e.nousDevons > 0);
-      if (aRendre.length) {
-        doc.fontSize(8).fillColor("#b45309");
-        doc.text(
-          aRendre
-            .map((e) => `dont ${qte(e.nousDevons)} ${l.produit.unite ?? "u"} à rendre à ${e.delArte}`)
-            .join(" · "),
-          colonnes[0].x,
-          doc.y,
-          { width: colonnes[0].w },
-        );
-        doc.fontSize(10).fillColor("#171b24");
+      if (aRendre) {
+        doc.fontSize(PETIT).fillColor("#b45309");
+        doc.text(aRendre, colonnes[0].x, doc.y, { width: colonnes[0].w });
+        doc.fontSize(TAILLE).fillColor("#171b24");
       }
-      let bas = doc.y;
-      // Nombre d'unités par colis : aide à pointer la livraison et le stock.
-      const fact = Number(l.produit.fact);
-      const cond = l.produit.conditionnement ?? "colis";
+      doc.text(texteCond, colonnes[1].x, y, { width: colonnes[1].w });
       doc.text(
-        fact > 0 && fact !== 1
-          ? `${cond} de ${qte(fact)} ${l.produit.unite ?? "u"}`
-          : l.produit.conditionnement ?? "—",
-        colonnes[1].x,
-        y,
-        { width: colonnes[1].w },
-      );
-      bas = Math.max(bas, doc.y);
-      doc.text(
-        l.ligne.stock === null ? "—" : `${qte(Number(l.ligne.stock))} ${l.produit.unite ?? "u"}`,
+        l.ligne.stock === null ? "—" : `${qte(Number(l.ligne.stock))} ${unite}`,
         colonnes[2].x,
         y,
-        { width: colonnes[2].w, align: "right" },
+        { width: colonnes[2].w, align: "right", lineBreak: false },
       );
       doc.font("Helvetica-Bold").text(l.colis > 0 ? qte(l.colis) : "—", colonnes[3].x, y, {
         width: colonnes[3].w,
         align: "right",
+        lineBreak: false,
       });
       doc.font("Helvetica").fillColor("#4d5668");
       doc.text(
-        l.colis > 0 ? `${qte(l.colis * Number(l.produit.fact))} ${l.produit.unite ?? "u"}` : "",
+        l.colis > 0 ? `${qte(l.colis * fact)} ${unite}` : "",
         colonnes[4].x,
         y,
-        { width: colonnes[4].w, align: "right" },
+        { width: colonnes[4].w, align: "right", lineBreak: false },
       );
       doc.fillColor("#171b24");
-      doc.y = Math.max(bas, y + 12);
-      doc.moveDown(0.35);
-      doc
-        .strokeColor("#c9ced8")
-        .lineWidth(0.6)
-        .moveTo(MARGE, doc.y)
-        .lineTo(MARGE + largeur, doc.y)
-        .stroke();
-      doc.moveDown(0.35);
-    }
+      doc.x = MARGE;
+      doc.y = haut + h;
+    });
   }
 
   doc.moveDown(1);
