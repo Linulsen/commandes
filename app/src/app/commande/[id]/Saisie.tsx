@@ -1407,8 +1407,8 @@ function Fiche({
                   const besoin = prevuPour(ligne, stockTotal, etat.perte, etat.verifie).consoPrevue;
                   if (besoin <= 0) return "Pas de consommation mesurée";
                   return ligne.nbPoints > 0
-                    ? `Besoin estimé ${qte(besoin)} ${u} sur ${ligne.joursHorizon} j`
-                    : `Besoin estimé ${qte(besoin)} ${u} sur ${ligne.joursHorizon} j (d’après la sortie depuis le dernier relevé)`;
+                    ? `Besoin estimé ${qte(besoin)} ${u} sur ${ligne.joursHorizon} j (jusqu’à la livraison suivante)`
+                    : `Besoin estimé ${qte(besoin)} ${u} sur ${ligne.joursHorizon} j jusqu’à la livraison suivante (d’après la sortie depuis le dernier relevé)`;
                 })()}
               </p>
               {derniereCommande ? (

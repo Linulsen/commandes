@@ -2,6 +2,7 @@ import { sb, selectAll } from "./db";
 import {
   alerte,
   couverture,
+  delaiHabituel,
   prevoir,
   stockDisponible,
   joursEntre,
@@ -135,6 +136,50 @@ export async function getSessions(limite = 40) {
 }
 
 /**
+ * Délai habituel de livraison d'un fournisseur, en jours : médiane des écarts
+ * entre la date de commande et la date de réception de ses 12 dernières
+ * livraisons validées (Logistimax 3 j, France Boissons et Cledor 2 j en
+ * octobre 2026). Sert à faire tenir la commande jusqu'à la livraison suivante.
+ */
+export async function getDelaiLivraison(fournisseurId: number, sauf?: number) {
+  const { data: recs, error } = await sb()
+    .from("cmd_receptions")
+    .select("session_id, date_reception")
+    .eq("fournisseur_id", fournisseurId)
+    .eq("type", "livraison")
+    .eq("statut", "validee")
+    .not("session_id", "is", null)
+    .order("date_reception", { ascending: false })
+    .limit(12);
+  if (error) throw new Error(error.message);
+  const liste = ((recs ?? []) as { session_id: number | null; date_reception: string }[]).filter(
+    (r) => r.session_id !== null && r.session_id !== sauf,
+  );
+  if (!liste.length) return delaiHabituel([]);
+  const { data: sess, error: e2 } = await sb()
+    .from("cmd_sessions")
+    .select("id, date_commande")
+    .in(
+      "id",
+      liste.map((r) => r.session_id!),
+    );
+  if (e2) throw new Error(e2.message);
+  const dateDe = new Map(
+    ((sess ?? []) as { id: number; date_commande: string }[]).map((x) => [x.id, x.date_commande]),
+  );
+  const delais = liste
+    .map((r) => {
+      const d = dateDe.get(r.session_id!);
+      if (!d) return NaN;
+      return Math.round(
+        (Date.parse(r.date_reception.slice(0, 10)) - Date.parse(d.slice(0, 10))) / 86_400_000,
+      );
+    })
+    .filter((x) => Number.isFinite(x));
+  return delaiHabituel(delais);
+}
+
+/**
  * Tout ce qu'il faut pour afficher une commande : les produits du fournisseur,
  * leur historique, la prévision et la quantité proposée.
  *
@@ -153,6 +198,7 @@ export async function getCommande(sessionId: number) {
   if (!paquet?.session) return null;
 
   const { session, zones } = paquet;
+  const delai = await getDelaiLivraison(session.fournisseur_id, sessionId);
   const soldes = await getSoldesDelArte(paquet.lignes.map((l) => l.produit.id));
   const soldesPar = new Map<number, SoldeDelArte[]>();
   for (const so of soldes) soldesPar.set(so.produitId, [...(soldesPar.get(so.produitId) ?? []), so]);
@@ -175,6 +221,7 @@ export async function getCommande(sessionId: number) {
       undefined,
       brut.nbReleves,
       session.libelle || undefined,
+      delai,
     );
     const ligne: Ligne = {
       id: brut.ligne.id ?? 0,

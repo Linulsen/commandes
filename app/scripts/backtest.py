@@ -8,6 +8,14 @@ Deux méthodes sont comparées : une moyenne par période, et la même moyenne
 ramenée au jour puis reprojetée sur la durée réelle jusqu'à la livraison
 suivante — c'est la seconde qui est en service.
 
+Critère corrigé le 25/10/2026 : une proposition est suffisante si le stock
+compté plus la commande tiennent jusqu'à la livraison qui SUIT celle qu'on
+commande (consommation jusqu'au relevé suivant + délai de livraison de la
+commande d'après, au rythme de la période qui suit). Avant, on ne vérifiait
+que jusqu'au relevé suivant, ce qui laissait de côté les jours entre ce relevé
+et la livraison : à +50 %, 4 % de manques annoncés, 14,7 % en réalité.
+La méthode « jour » projette elle aussi jusqu'à la livraison suivante.
+
 Une précision de lecture : la ligne « reel » affiche 0 % de ruptures par
 construction, pas par mérite. La consommation est déduite du stock livré, donc
 elle ne peut jamais dépasser ce qui a été commandé. Seul le chiffre des
@@ -32,6 +40,12 @@ hist=page('cmd_historique','produit_id,session_id,date_commande,stock,colis,cons
 prods={p['id']:p for p in page('cmd_produits','id,zone_id,fact')}
 sess={s['id']:s for s in page('cmd_sessions','id,fournisseur_id,date_commande')}
 four={f['id']:f['nom'] for f in page('cmd_fournisseurs','id,nom')}
+DEFAUT={1:3}  # délai par défaut (jours) : Logistimax 3, les autres 2
+delai_de={}
+for r in page('cmd_receptions','session_id,date_reception,type,statut'):
+    s_=sess.get(r['session_id']) if r['session_id'] else None
+    if s_ and r['type']=='livraison' and r['statut']=='validee':
+        delai_de[s_['id']]=(datetime.date.fromisoformat(r['date_reception'][:10])-datetime.date.fromisoformat(s_['date_commande'][:10])).days
 def f(x): return None if x is None else float(x)
 par=defaultdict(list)
 for h in hist: par[h['produit_id']].append(h)
@@ -61,18 +75,23 @@ for pid, pts in par.items():
         stock=f(p['stock']); reel=f(p['colis']) or 0.0
         suite=f(pts[i+1]['conso']) if i+1<len(pts) else None
         jours_suite=(D(pts[i+1]['date_commande'])-D(p['date_commande'])).days if i+1<len(pts) else None
-        if stock is not None and i>0 and suite is not None and suite>0 and jours_suite:
-            k=four[sess[p['session_id']]['fournisseur_id']]
+        apres=pts[i+2] if i+2<len(pts) else None
+        if stock is not None and i>0 and suite is not None and suite>0 and jours_suite and apres and f(apres['conso']) is not None:
+            fid=sess[p['session_id']]['fournisseur_id']
+            k=four[fid]
+            delai=delai_de.get(pts[i+1]['session_id'], DEFAUT.get(fid,2))
+            j_apres=(D(apres['date_commande'])-D(pts[i+1]['date_commande'])).days or 1
+            besoin_reel=suite+max(0.0,f(apres['conso'])/j_apres)*delai
             props={'periode': sugg(moy(par_periode), stock, fact, MARGE),
-                   'jour': sugg(moy(par_jour)*jours_suite, stock, fact, MARGE),
+                   'jour': sugg(moy(par_jour)*(jours_suite+delai), stock, fact, MARGE),
                    'reel': reel}
             for nom,prop in props.items():
                 for cle in (k,'TOTAL'):
                     r=stat[nom][cle]; r['n']+=1
                     if prop==reel: r['exact']+=1
                     if abs(prop-reel)<=1: r['pm1']+=1
-                    if stock+prop*fact<suite: r['rup']+=1
-                    r['sur'].append((stock+prop*fact-suite)/suite)
+                    if stock+prop*fact<besoin_reel: r['rup']+=1
+                    r['sur'].append((stock+prop*fact-besoin_reel)/besoin_reel)
         c=f(p['conso'])
         if c is not None and i>0:
             j=(D(p['date_commande'])-D(pts[i-1]['date_commande'])).days or 1
@@ -81,7 +100,7 @@ for pid, pts in par.items():
 print(f"marge {MARGE:.0%}")
 print(f"{'méthode':10s} {'fournisseur':17s} {'lignes':>7s} {'exact':>7s} {'±1':>6s} {'ruptures':>9s} {'surplus méd.':>13s}")
 for nom in ('periode','jour','reel'):
-    for cle in ('GLD','France Boissons','Cledor','TOTAL'):
+    for cle in ('Logistimax','GLD','France Boissons','Cledor','TOTAL'):
         r=stat[nom][cle]
         if not r['n']: continue
         print(f"{nom:10s} {cle:17s} {r['n']:7d} {r['exact']/r['n']:6.0%} {r['pm1']/r['n']:5.0%} "

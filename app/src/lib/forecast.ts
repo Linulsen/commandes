@@ -7,7 +7,11 @@ export type Prevision = {
   consoPrevue: number;
   /** Rythme de consommation, en unités par jour. */
   consoParJour: number;
-  /** Nombre de jours couverts par la commande en préparation. */
+  /**
+   * Nombre de jours couverts par la commande en préparation : du relevé
+   * jusqu'à la livraison qui suit celle qu'on commande (intervalle habituel
+   * entre relevés + délai de livraison du fournisseur).
+   */
   joursHorizon: number;
   fiabilite: Fiabilite;
   /** Consommations relevées, de la plus ancienne à la plus récente. */
@@ -24,6 +28,16 @@ export type Prevision = {
 
 const moyenne = (xs: number[]) =>
   xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+
+/**
+ * Délai habituel entre la commande et la livraison, en jours (médiane des
+ * dernières réceptions du fournisseur). `defaut` quand rien n'est mesuré.
+ */
+export function delaiHabituel(delais: number[], defaut = 2) {
+  const d = delais.filter((x) => Number.isFinite(x) && x >= 0).sort((a, b) => a - b);
+  if (!d.length) return defaut;
+  return d[Math.floor(d.length / 2)];
+}
 
 /** Durée typique entre deux relevés, pour projeter la période à venir. */
 export function horizonHabituel(serie: { jours: number }[], defaut = 7) {
@@ -56,12 +70,22 @@ export function horizonHabituel(serie: { jours: number }[], defaut = 7) {
  * commande du mercredi pour vendredi couvre le week-end, celle du dimanche pour
  * mardi non : ni le rythme ni la durée ne sont les mêmes. Dès qu'il y a assez
  * de périodes du même créneau, on ne regarde qu'elles.
+ *
+ * `delaiLivraison` (corrigé le 25/10/2026, après la rupture de fondants au
+ * chocolat) : le stock compté au relevé doit tenir jusqu'à la livraison de
+ * cette commande, et cette livraison jusqu'à la suivante. La commande couvre
+ * donc l'intervalle entre deux relevés PLUS le délai de livraison de la
+ * commande d'après (lundi → jeudi suivant chez Logistimax : 7 + 3 = 10 jours).
+ * Avant, seul l'intervalle entre relevés était couvert et la marge de +50 %
+ * était presque entièrement absorbée par ces jours-là. Rejoué sur 3 534
+ * commandes : manques jusqu'à la livraison suivante 14,7 % → 3,9 %.
  */
 export function prevoir(
   serieComplete: PointConso[],
   joursHorizon?: number,
   nbRelevesTotal?: number,
   creneau?: string,
+  delaiLivraison = 0,
 ): Prevision {
   const memeCreneau = creneau
     ? serieComplete.filter((s) => (s.creneau ?? "") === creneau)
@@ -69,7 +93,7 @@ export function prevoir(
   const serie = memeCreneau.length >= 3 ? memeCreneau : serieComplete;
   const parJour = serie.map((s) => s.conso / s.jours);
   const n = parJour.length;
-  const horizon = joursHorizon ?? horizonHabituel(serie);
+  const horizon = joursHorizon ?? horizonHabituel(serie) + delaiLivraison;
   const anomalies = serie.filter((s) => s.conso < 0).length;
 
   // La fenêtre courte suit la carte du moment, la longue amortit les à-coups
