@@ -72,10 +72,28 @@ export const estLigneDeComptage = (p: Pick<Produit, "compte_pour">) =>
  * été renvoyée au serveur disparaîtrait du bon de commande alors qu'elle
  * s'affiche à l'écran.
  */
-export function quantiteRetenue(l: LigneEnrichie): number {
+export function quantiteRetenue(l: LigneEnrichie, figee = false): number {
   if (estLigneDeComptage(l.produit)) return 0;
-  if (l.ligne.colis !== null) return Number(l.ligne.colis);
+  // Commande validée : ce qui a été enregistré fait foi, c'est ce qui est parti.
+  if (figee) return l.ligne.colis !== null ? Number(l.ligne.colis) : 0;
+  if (quantiteChoisie(l)) return Number(l.ligne.colis);
   return l.stockTotal !== null ? l.suggestion : 0;
+}
+
+/**
+ * Quantité arrêtée par le chef : elle diffère de ce que l'application
+ * proposait au moment de la saisie. Même règle que l'écran de relevé
+ * (`force`). Sinon, la quantité enregistrée n'est que l'ancienne proposition,
+ * et c'est la proposition du moment qui compte : un calcul modifié entre la
+ * saisie et l'impression (25/10/2026, Moretti 1 fût sur le PDF, 2 à l'écran)
+ * ne doit pas laisser le bon de commande en retard sur l'écran.
+ */
+export function quantiteChoisie(l: LigneEnrichie): boolean {
+  if (l.ligne.colis === null) return false;
+  return (
+    l.ligne.suggestion === null ||
+    Math.abs(Number(l.ligne.colis) - Number(l.ligne.suggestion)) > 0.0005
+  );
 }
 
 /**
@@ -650,7 +668,7 @@ export async function ouvrirReception(sessionId: number) {
   const reception = data as Reception;
 
   const commandees = commande.lignes
-    .map((l) => ({ l, colis: quantiteRetenue(l) }))
+    .map((l) => ({ l, colis: quantiteRetenue(l, commande.session.statut === "validee") }))
     .filter((x) => x.colis > 0);
   if (commandees.length) {
     const ins = await sb().from("cmd_reception_lignes").insert(

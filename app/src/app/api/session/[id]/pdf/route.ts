@@ -34,7 +34,7 @@ export async function GET(
 
   const complet = new URL(req.url).searchParams.get("complet") === "1";
   const aCommander = commande.lignes
-    .map((l) => ({ ...l, colis: quantiteRetenue(l) }))
+    .map((l) => ({ ...l, colis: quantiteRetenue(l, commande.session.statut === "validee") }))
     .filter((l) => (complet ? l.ligne.stock !== null || l.colis > 0 : l.colis > 0));
 
   const doc = new PDFDocument({ size: "A4", margin: MARGE, bufferPages: true });
