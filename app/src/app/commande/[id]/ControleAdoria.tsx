@@ -99,7 +99,7 @@ export default function ControleAdoria({
   const nbEcarts = oublis.length + differents.length + enPlus.length + inconnus.length;
 
   return (
-    <section className="sans-impression mt-5 rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
+    <section className="sans-impression mb-3 rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
       <h2 className="font-titre text-sm font-semibold">Contrôler la commande Adoria</h2>
       <p className="mt-1 text-xs leading-relaxed text-neutre-500">
         Déposez le ou les bons de commande PDF d’Adoria (commande principale et

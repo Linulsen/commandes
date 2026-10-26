@@ -1643,6 +1643,12 @@ function Recapitulatif({
 }) {
   return (
     <div>
+      {/* Logistimax se commande aussi dans Adoria : contrôle des bons PDF,
+          en haut du récapitulatif (demandé le 26/10/2026). */}
+      {session.fournisseur_id === 1 ? (
+        <ControleAdoria lignes={lignes} aCommander={aCommander} />
+      ) : null}
+
       {!fige ? (
         <div className="sans-impression mb-3 rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
           <label htmlFor="marge" className="block font-titre text-sm font-semibold">
@@ -1786,11 +1792,6 @@ function Recapitulatif({
           );
         })
       )}
-
-      {/* Logistimax se commande aussi dans Adoria : contrôle des bons PDF. */}
-      {session.fournisseur_id === 1 ? (
-        <ControleAdoria lignes={lignes} aCommander={aCommander} />
-      ) : null}
 
       <div className="sans-impression mt-5 space-y-2">
         {fige ? (
