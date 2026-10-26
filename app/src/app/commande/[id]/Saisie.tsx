@@ -22,6 +22,7 @@ import { useTri } from "@/lib/tri";
 import { comparer } from "@/lib/tri-commun";
 import type { PointConso, ReleveResume, Session, Zone } from "@/lib/types";
 import EtatEnvoi from "../../EtatEnvoi";
+import ControleAdoria from "./ControleAdoria";
 import ChoixTri from "../../ChoixTri";
 import Pave, { frappeDe, frapper, montrerLigne, type Frappe, type Raccourci } from "../../Pave";
 
@@ -32,6 +33,8 @@ export type LigneSaisie = {
   nom: string;
   /** Nom complet du produit, pour la recherche. */
   nomComplet: string;
+  /** Code de l'article dans Adoria, pour contrôler un bon Adoria. */
+  codeAdoria: string | null;
   /** Place dans l'ordre de rangement ; null : pas encore placé. */
   rang: number | null;
   conditionnement: string | null;
@@ -755,6 +758,7 @@ export default function Saisie({
           <Recapitulatif
             session={session}
             zones={zones}
+            lignes={lignes}
             aCommander={aCommander}
             saisis={saisis}
             fige={fige}
@@ -1603,6 +1607,7 @@ function LivraisonsAReceptionner({ livraisons }: { livraisons: LivraisonEnAttent
 function Recapitulatif({
   session,
   zones,
+  lignes,
   aCommander,
   saisis,
   fige,
@@ -1618,6 +1623,7 @@ function Recapitulatif({
 }: {
   session: Session;
   zones: Zone[];
+  lignes: LigneSaisie[];
   aCommander: { l: LigneSaisie; colis: number; etat: Etat }[];
   /** Nombre de produits dont le stock a été relevé. */
   saisis: number;
@@ -1780,6 +1786,11 @@ function Recapitulatif({
           );
         })
       )}
+
+      {/* Logistimax se commande aussi dans Adoria : contrôle des bons PDF. */}
+      {session.fournisseur_id === 1 ? (
+        <ControleAdoria lignes={lignes} aCommander={aCommander} />
+      ) : null}
 
       <div className="sans-impression mt-5 space-y-2">
         {fige ? (

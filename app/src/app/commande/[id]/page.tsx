@@ -57,6 +57,7 @@ export default async function Commande({
           zoneId: l.zone.id,
           nom: l.produit.nom_court || l.produit.nom,
           nomComplet: l.produit.nom,
+          codeAdoria: l.produit.code_adoria ?? null,
           rang: l.produit.rang ?? null,
           conditionnement: l.produit.conditionnement,
           unite: l.produit.unite,

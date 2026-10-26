@@ -36,6 +36,8 @@ export type Produit = {
   zone_impression_id?: number | null;
   /** Commandé dans la commande Logistimax « Economat » (PDF), même si compté ailleurs. */
   commande_economat?: boolean;
+  /** Code de l'article dans Adoria / Logistimax. */
+  code_adoria?: string | null;
   /** Lieu d'inventaire, quand la chambre de commande n'est pas un lieu réel. */
   lieu_id?: number | null;
   /**
