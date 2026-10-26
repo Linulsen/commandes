@@ -125,9 +125,34 @@ export async function GET(
     (a, b) => Number(a.slug === "gld-economat") - Number(b.slug === "gld-economat"),
   );
 
+  // Logistimax : deux grands titres, « Tout sauf Economat » puis « Economat »
+  // (demandé le 26/10/2026), au-dessus des bandeaux d'emplacement.
+  const estEconomat = (z: { slug: string }) => z.slug === "gld-economat";
+  const avecGrandsTitres = fournisseur.id === 1;
+  let groupeCourant: string | null = null;
+  const grandTitre = (titre: string) => {
+    sautSiBesoin(130);
+    if (groupeCourant !== null) doc.moveDown(1.5);
+    const y = doc.y;
+    doc.font("Helvetica-Bold").fontSize(20).fillColor("#171b24");
+    doc.text(titre.toUpperCase(), MARGE, y, { width: largeur });
+    const bas = doc.y + 4;
+    doc.rect(MARGE, bas, largeur, 3).fill("#171b24");
+    doc.x = MARGE;
+    doc.y = bas + 8;
+  };
+
   for (const zone of zonesImprimees) {
     const dedans = aCommander.filter((l) => l.zone.id === zone.id);
     if (!dedans.length) continue;
+
+    if (avecGrandsTitres) {
+      const groupe = estEconomat(zone) ? "Logistimax Economat" : "Logistimax Tout sauf Economat";
+      if (groupe !== groupeCourant) {
+        grandTitre(groupe);
+        groupeCourant = groupe;
+      }
+    }
 
     sautSiBesoin(90);
     doc.moveDown(0.8);
