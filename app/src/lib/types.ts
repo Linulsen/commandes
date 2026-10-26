@@ -32,6 +32,8 @@ export type Produit = {
   nom_court?: string | null;
   /** Compté seulement dans l'unité, jamais au carton (glaces en bac). */
   sans_carton?: boolean;
+  /** Rubrique où l'imprimer sur le PDF, si différente de sa zone ; null : sa zone. */
+  zone_impression_id?: number | null;
   /** Lieu d'inventaire, quand la chambre de commande n'est pas un lieu réel. */
   lieu_id?: number | null;
   /**

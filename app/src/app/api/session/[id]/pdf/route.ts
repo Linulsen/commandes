@@ -143,7 +143,11 @@ export async function GET(
   };
 
   for (const zone of zonesImprimees) {
-    const dedans = aCommander.filter((l) => l.zone.id === zone.id);
+    // Un article peut être imprimé dans une autre rubrique que celle du relevé
+    // (crème pâtissière en Economat, 26/10/2026).
+    const dedans = aCommander.filter(
+      (l) => (l.produit.zone_impression_id ?? l.zone.id) === zone.id,
+    );
     if (!dedans.length) continue;
 
     if (avecGrandsTitres) {
