@@ -119,7 +119,13 @@ export async function GET(
     return false;
   };
 
-  for (const zone of commande.zones) {
+  // À l'impression, l'Economat passe en dernier (demandé le 26/10/2026) ;
+  // à l'écran, l'ordre des zones ne change pas.
+  const zonesImprimees = [...commande.zones].sort(
+    (a, b) => Number(a.slug === "gld-economat") - Number(b.slug === "gld-economat"),
+  );
+
+  for (const zone of zonesImprimees) {
     const dedans = aCommander.filter((l) => l.zone.id === zone.id);
     if (!dedans.length) continue;
 
