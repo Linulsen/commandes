@@ -34,6 +34,8 @@ export type Produit = {
   sans_carton?: boolean;
   /** Rubrique où l'imprimer sur le PDF, si différente de sa zone ; null : sa zone. */
   zone_impression_id?: number | null;
+  /** Commandé dans la commande Logistimax « Economat » (PDF), même si compté ailleurs. */
+  commande_economat?: boolean;
   /** Lieu d'inventaire, quand la chambre de commande n'est pas un lieu réel. */
   lieu_id?: number | null;
   /**

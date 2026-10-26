@@ -119,16 +119,31 @@ export async function GET(
     return false;
   };
 
-  // À l'impression, l'Economat passe en dernier (demandé le 26/10/2026) ;
-  // à l'écran, l'ordre des zones ne change pas.
+  // Logistimax passe deux commandes : « Tout sauf Economat » puis « Economat »
+  // (26/10/2026). Chacune est découpée par emplacement, comme sur le site
+  // Logistimax : un article commandé en Economat peut être rangé en chambre
+  // froide, en réserve sèche, etc. Le relevé à l'écran ne change pas.
+  const avecGrandsTitres = fournisseur.id === 1;
+  const ECONOMAT = "gld-economat";
+  const enEconomat = (l: (typeof aCommander)[number]) =>
+    avecGrandsTitres && (l.zone.slug === ECONOMAT || !!l.produit.commande_economat);
+  // Emplacement imprimé : réglé à part si besoin (zone_impression_id).
+  const rubriqueDe = (l: (typeof aCommander)[number]) => l.produit.zone_impression_id ?? l.zone.id;
+  // Emplacements dans l'ordre du relevé ; « Economat » (articles sans
+  // emplacement précisé) en dernier.
   const zonesImprimees = [...commande.zones].sort(
-    (a, b) => Number(a.slug === "gld-economat") - Number(b.slug === "gld-economat"),
+    (a, b) => Number(a.slug === ECONOMAT) - Number(b.slug === ECONOMAT),
+  );
+  const parties = avecGrandsTitres
+    ? [
+        { titre: "Logistimax Tout sauf Economat", economat: false },
+        { titre: "Logistimax Economat", economat: true },
+      ]
+    : [{ titre: "", economat: false }];
+  const sections = parties.flatMap((partie) =>
+    zonesImprimees.map((zone) => ({ partie, zone })),
   );
 
-  // Logistimax : deux grands titres, « Tout sauf Economat » puis « Economat »
-  // (demandé le 26/10/2026), au-dessus des bandeaux d'emplacement.
-  const estEconomat = (z: { slug: string }) => z.slug === "gld-economat";
-  const avecGrandsTitres = fournisseur.id === 1;
   let groupeCourant: string | null = null;
   const grandTitre = (titre: string) => {
     sautSiBesoin(130);
@@ -142,20 +157,15 @@ export async function GET(
     doc.y = bas + 8;
   };
 
-  for (const zone of zonesImprimees) {
-    // Un article peut être imprimé dans une autre rubrique que celle du relevé
-    // (crème pâtissière en Economat, 26/10/2026).
+  for (const { partie, zone } of sections) {
     const dedans = aCommander.filter(
-      (l) => (l.produit.zone_impression_id ?? l.zone.id) === zone.id,
+      (l) => enEconomat(l) === partie.economat && rubriqueDe(l) === zone.id,
     );
     if (!dedans.length) continue;
 
-    if (avecGrandsTitres) {
-      const groupe = estEconomat(zone) ? "Logistimax Economat" : "Logistimax Tout sauf Economat";
-      if (groupe !== groupeCourant) {
-        grandTitre(groupe);
-        groupeCourant = groupe;
-      }
+    if (avecGrandsTitres && partie.titre !== groupeCourant) {
+      grandTitre(partie.titre);
+      groupeCourant = partie.titre;
     }
 
     sautSiBesoin(90);
