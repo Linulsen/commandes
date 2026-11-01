@@ -778,6 +778,8 @@ export type ProduitCatalogue = Pick<
   comptePour: number | null;
   equivalence: number | null;
   nomRattache: string | null;
+  /** Dépannage et échanges Del Arte saisis en colis à l'écran (stockés en unités). */
+  depannageEnColis: boolean;
 };
 
 /**
@@ -833,6 +835,7 @@ export async function getReception(id: number) {
         p.compte_pour == null
           ? null
           : (produits.find((q) => q.id === p.compte_pour)?.nom ?? null),
+      depannageEnColis: p.depannage_en_colis === true && Number(p.fact) > 0,
     }))
     .sort(
       (a, b) =>

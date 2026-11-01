@@ -93,6 +93,18 @@ export default function SaisieReception({
   useEcranAllume(!fige);
 
   const produit = useMemo(() => new Map(catalogue.map((p) => [p.id, p])), [catalogue]);
+  /**
+   * Dépannage ou échange d'un article saisi en colis (pâton pizza en cartons
+   * de 55) : l'écran montre des colis, la base garde des unités (colis × fact).
+   * Les pertes restent en unités.
+   */
+  const facteur = useCallback(
+    (pid: number) => {
+      const p = produit.get(pid);
+      return depannage && !perte && p?.depannageEnColis ? p.fact : 1;
+    },
+    [depannage, perte, produit],
+  );
 
   // Reprise des saisies gardées sur le téléphone, plus récentes que la page.
   useEffect(() => {
@@ -178,19 +190,21 @@ export default function SaisieReception({
     (pid: number) => {
       if (fige) return;
       (document.activeElement as HTMLElement | null)?.blur?.();
-      const f = frappeDe(etatsRef.current[pid]?.quantite ?? null);
+      const q = etatsRef.current[pid]?.quantite ?? null;
+      const f = frappeDe(q === null ? null : arrondi(q / facteur(pid)));
       frappeRef.current = f;
       setFrappe(f);
       setCible(pid);
     },
-    [fige],
+    [fige, facteur],
   );
   const toucher = (t: string) => {
     if (cible === null) return;
     const f = frapper(frappeRef.current, t);
     frappeRef.current = f;
     setFrappe(f);
-    const v = lireNombre(f.texte) ?? null;
+    const lu = lireNombre(f.texte) ?? null;
+    const v = lu === null ? null : arrondi(lu * facteur(cible));
     // Saisir une quantité, c'est dire que le produit est arrivé.
     if (v !== (etatsRef.current[cible]?.quantite ?? null))
       modifier(cible, { quantite: v, recu: v !== null && v > 0 });
@@ -433,6 +447,7 @@ export default function SaisieReception({
                       produit={p}
                       etat={etats[p.id]}
                       depannage={depannage}
+                      facteur={facteur(p.id)}
                       fige={fige}
                       enAttente={envoi.cles.has(`reception:${reception.id}:${p.id}`)}
                       frappe={cible === p.id ? frappe : null}
@@ -506,7 +521,9 @@ export default function SaisieReception({
           titre={produitCible.nom}
           detail={
             depannage
-              ? `En ${produitCible.unite ?? "unités"}`
+              ? facteur(produitCible.id) !== 1
+                ? `En colis de ${qte(produitCible.fact)} ${produitCible.unite ?? "u"}`
+                : `En ${produitCible.unite ?? "unités"}`
               : etatCible?.commandes != null
                 ? `commandé ${qte(etatCible.commandes)} colis · en colis`
                 : "hors commande · en colis"
@@ -580,6 +597,7 @@ const LigneProduit = memo(function LigneProduit({
   produit,
   etat,
   depannage,
+  facteur,
   fige,
   enAttente,
   frappe,
@@ -589,6 +607,8 @@ const LigneProduit = memo(function LigneProduit({
   produit: ProduitCatalogue;
   etat: Etat | undefined;
   depannage: boolean;
+  /** Unités par colis quand ce dépannage se saisit en colis, sinon 1. */
+  facteur: number;
   fige: boolean;
   enAttente: boolean;
   frappe: Frappe | null;
@@ -599,6 +619,7 @@ const LigneProduit = memo(function LigneProduit({
   const u = produit.unite ?? "u";
   const actif = frappe !== null;
   const comptage = produit.comptePour !== null;
+  const enColis = facteur !== 1;
   const ecart =
     !depannage && recu && etat?.commandes != null && etat.quantite !== etat.commandes;
 
@@ -641,7 +662,8 @@ const LigneProduit = memo(function LigneProduit({
                 : etat
                   ? "hors commande"
                   : (produit.conditionnement ?? "")}
-              {!depannage ? ` · ${qte(produit.fact)} ${u}/colis` : ""}
+              {!depannage || enColis ? ` · ${qte(produit.fact)} ${u}/colis` : ""}
+              {enColis && etat?.quantite ? ` · = ${qte(etat.quantite)} ${u}` : ""}
             </>
           )}
           {ecart ? <span className="font-semibold text-ambre-700"> · écart</span> : null}
@@ -658,7 +680,7 @@ const LigneProduit = memo(function LigneProduit({
       </div>
       <div className="shrink-0 text-right">
         <span className="block text-[10px] font-semibold uppercase tracking-wide text-neutre-500">
-          {depannage || comptage ? u : "colis"}
+          {enColis ? "colis" : depannage || comptage ? u : "colis"}
         </span>
         <button
           type="button"
@@ -677,7 +699,7 @@ const LigneProduit = memo(function LigneProduit({
               <span className="curseur" aria-hidden="true" />
             </>
           ) : etat?.quantite != null ? (
-            qte(etat.quantite)
+            qte(arrondi(etat.quantite / facteur))
           ) : (
             <span className="text-neutre-300">
               {etat?.commandes != null ? qte(etat.commandes) : "0"}
@@ -745,4 +767,9 @@ function RappelEchanges({ echanges }: { echanges: EchangeRappel[] }) {
       ))}
     </div>
   );
+}
+
+/** Évite 2.9999999 après une conversion colis ↔ unités. */
+function arrondi(n: number) {
+  return Math.round(n * 1000) / 1000;
 }

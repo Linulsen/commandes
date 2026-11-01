@@ -52,6 +52,8 @@ export type Produit = {
    */
   compte_pour?: number | null;
   equivalence?: number | null;
+  /** Dépannages et échanges Del Arte saisis en colis (stockés en unités). */
+  depannage_en_colis?: boolean;
 };
 
 export type Session = {
