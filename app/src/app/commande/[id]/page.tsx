@@ -91,6 +91,7 @@ export default async function Commande({
             l.ligne.stock_verifie == null ? null : Number(l.ligne.stock_verifie),
           aConsomme: l.prevision.aConsomme,
           joursHorizon: l.prevision.joursHorizon,
+          delaiLivraison: l.prevision.delaiLivraison,
           joursDepuis: l.joursDepuis,
           serie: l.prevision.serie.slice(-16).map((pt) => ({
             date: "",

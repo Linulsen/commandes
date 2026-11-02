@@ -13,6 +13,8 @@ export type Prevision = {
    * entre relevés + délai de livraison du fournisseur).
    */
   joursHorizon: number;
+  /** Délai de livraison compris dans `joursHorizon` (0 : non mesuré). */
+  delaiLivraison: number;
   fiabilite: Fiabilite;
   /** Consommations relevées, de la plus ancienne à la plus récente. */
   serie: PointConso[];
@@ -125,6 +127,7 @@ export function prevoir(
     consoPrevue: Math.round(consoParJour * horizon * 100) / 100,
     consoParJour: Math.round(consoParJour * 1000) / 1000,
     joursHorizon: horizon,
+    delaiLivraison: joursHorizon === undefined ? delaiLivraison : 0,
     fiabilite,
     serie: serieComplete,
     derniere: serieComplete.length
@@ -137,6 +140,9 @@ export function prevoir(
   };
 }
 
+/** Marge des produits réguliers (fiabilité « bonne »), depuis le 02/11/2026. */
+export const MARGE_REGULIERS = 0.2;
+
 /**
  * Quantité à commander, en colis.
  *
@@ -145,6 +151,21 @@ export function prevoir(
  * livre pas des demi-cartons. L'arrondi se fait au plus proche pour ne pas
  * empiler du stock, sauf si cela laisserait le restaurant en dessous de sa
  * consommation attendue : là, on remonte d'un colis.
+ *
+ * `periode` (corrigé le 02/11/2026, après 11 cartons de burrata et 16 seaux
+ * de crème proposés pour une semaine qui en consomme 7 et 8) : la commande se
+ * raisonne à partir du jour de livraison.
+ * - Le stock compté sert d'abord jusqu'à la livraison ; ce qui en reste ce
+ *   jour-là ne descend jamais sous zéro. Ce qui manquerait avant la livraison
+ *   ne peut pas être rattrapé par elle (un dépannage, oui) : le compter faisait
+ *   commander ces jours-là en plus, marge comprise.
+ * - La marge porte sur la période que la livraison doit tenir (jusqu'à la
+ *   livraison suivante), plus sur les jours d'avant.
+ * - Produits réguliers (fiabilité « bonne ») : marge de +20 %, au lieu de la
+ *   marge de la commande (+50 %).
+ * Rejoué sur 4 132 commandes : 15 538 → 10 971 colis, manques jusqu'à la
+ * livraison suivante 6,1 % → 9,8 % (commandes réellement passées : 10 159
+ * colis, 8,2 %).
  */
 export function suggerer(
   consoPrevue: number,
@@ -152,16 +173,30 @@ export function suggerer(
   fact: number,
   marge: number,
   aConsomme = false,
+  periode?: { joursHorizon: number; delai: number; fiabilite: Fiabilite },
 ): number {
   const f = fact > 0 ? fact : 1;
   const enStock = stock ?? 0;
-  const besoin = consoPrevue * (1 + marge) - enStock;
+  let besoin: number;
+  let plancher: number;
+  const delai = periode?.delai ?? 0;
+  if (periode && delai > 0 && periode.joursHorizon > delai && consoPrevue > 0) {
+    const parJour = consoPrevue / periode.joursHorizon;
+    const m = periode.fiabilite === "bonne" ? Math.min(marge, MARGE_REGULIERS) : marge;
+    const resteALivraison = Math.max(0, enStock - parJour * delai);
+    const aTenir = parJour * (periode.joursHorizon - delai);
+    besoin = aTenir * (1 + m) - resteALivraison;
+    plancher = aTenir - resteALivraison;
+  } else {
+    besoin = consoPrevue * (1 + marge) - enStock;
+    plancher = consoPrevue - enStock;
+  }
   // Sécurité : plus rien en chambre d'un produit qui se vend. Un relevé faux
   // peut faire tomber la prévision à zéro (consommation négative) ; on ne
   // laisse pas pour autant le restaurant sans rien.
   if (besoin <= 0) return aConsomme && stock !== null && enStock <= 0 ? 1 : 0;
   let colis = Math.max(1, Math.round(besoin / f));
-  while (enStock + colis * f < consoPrevue && colis < 999) colis += 1;
+  while (colis * f < plancher && colis < 999) colis += 1;
   return colis;
 }
 

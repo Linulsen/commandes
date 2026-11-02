@@ -73,6 +73,8 @@ export type LigneSaisie = {
   /** Vendu sur au moins une des 8 dernières périodes. */
   aConsomme: boolean;
   joursHorizon: number;
+  /** Délai de livraison compris dans `joursHorizon`. */
+  delaiLivraison: number;
   /** Jours depuis le dernier relevé (null : aucun relevé avant). */
   joursDepuis: number | null;
   /**
@@ -351,6 +353,7 @@ export default function Saisie({
               l.fact,
               Number(session.marge),
               p.aConsomme,
+              { joursHorizon: l.joursHorizon, delai: l.delaiLivraison, fiabilite: l.fiabilite },
             );
           })(),
     [session.marge, stockDispo, stockTotal],

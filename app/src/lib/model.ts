@@ -302,6 +302,11 @@ export async function getCommande(sessionId: number) {
             Number(produit.fact),
             Number(session.marge),
             prevue.aConsomme,
+            {
+              joursHorizon: prevision.joursHorizon,
+              delai: prevision.delaiLivraison,
+              fiabilite: prevision.fiabilite,
+            },
           ),
       alerte: comptage ? null : alerte(prevue, dispo),
       couverture: comptage ? null : couverture(prevue, dispo),
