@@ -52,6 +52,7 @@ export default async function Commande({
         zones={commande.zones}
         chargeLe={Date.now()}
         livraisonsEnAttente={livraisonsEnAttente}
+        livraison={commande.livraison}
         lignes={commande.lignes.map((l) => ({
           produitId: l.produit.id,
           zoneId: l.zone.id,

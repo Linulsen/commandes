@@ -197,6 +197,13 @@ export async function getDelaiLivraison(fournisseurId: number, sauf?: number) {
   return delaiHabituel(delais);
 }
 
+/** Date ISO (aaaa-mm-jj) décalée de `jours` jours. */
+function ajouterJours(iso: string, jours: number) {
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + jours);
+  return d.toISOString().slice(0, 10);
+}
+
 /**
  * Tout ce qu'il faut pour afficher une commande : les produits du fournisseur,
  * leur historique, la prévision et la quantité proposée.
@@ -216,7 +223,28 @@ export async function getCommande(sessionId: number) {
   if (!paquet?.session) return null;
 
   const { session, zones } = paquet;
-  const delai = await getDelaiLivraison(session.fournisseur_id, sessionId);
+  const delaiMesure = await getDelaiLivraison(session.fournisseur_id, sessionId);
+  // Livraison prévue saisie sur ce relevé (jour férié, relevé avancé) : elle
+  // remplace le délai habituel pour cette commande seulement.
+  const delaiPrevu = session.livraison_prevue
+    ? Math.round(
+        (Date.parse(session.livraison_prevue.slice(0, 10)) -
+          Date.parse(session.date_commande.slice(0, 10))) /
+          86_400_000,
+      )
+    : null;
+  const delai =
+    delaiPrevu !== null && Number.isFinite(delaiPrevu) && delaiPrevu >= 0
+      ? delaiPrevu
+      : delaiMesure;
+  const livraison = {
+    /** Date retenue pour le calcul. */
+    date: ajouterJours(session.date_commande, delai),
+    /** Date qu'aurait donnée le délai habituel. */
+    habituelle: ajouterJours(session.date_commande, delaiMesure),
+    delaiHabituel: delaiMesure,
+    modifiee: delaiPrevu !== null && delai === delaiPrevu,
+  };
   const soldes = await getSoldesDelArte(paquet.lignes.map((l) => l.produit.id));
   const soldesPar = new Map<number, SoldeDelArte[]>();
   for (const so of soldes) soldesPar.set(so.produitId, [...(soldesPar.get(so.produitId) ?? []), so]);
@@ -331,7 +359,7 @@ export async function getCommande(sessionId: number) {
       alpha(a.produit.nom, b.produit.nom),
   );
 
-  return { session, zones, lignes };
+  return { session, zones, lignes, livraison };
 }
 
 /**

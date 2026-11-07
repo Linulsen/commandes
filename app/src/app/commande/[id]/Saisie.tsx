@@ -9,7 +9,7 @@ import {
   suggerer,
   type Fiabilite,
 } from "@/lib/forecast";
-import { dateCourte, normaliser, qte } from "@/lib/format";
+import { dateCourte, dateLongue, normaliser, qte } from "@/lib/format";
 import {
   lireNombre,
   mettreEnFile,
@@ -188,6 +188,7 @@ export default function Saisie({
   lignes,
   chargeLe,
   livraisonsEnAttente = [],
+  livraison,
 }: {
   session: Session;
   zones: Zone[];
@@ -196,6 +197,8 @@ export default function Saisie({
   chargeLe: number;
   /** Commandes précédentes dont la livraison n'est pas réceptionnée. */
   livraisonsEnAttente?: LivraisonEnAttente[];
+  /** Livraison attendue pour cette commande (délai habituel ou date saisie). */
+  livraison?: LivraisonPrevue;
 }) {
   const router = useRouter();
 
@@ -777,6 +780,19 @@ export default function Saisie({
             }))}
             onConfirmer={(produitId, total) => modifier(produitId, { verifie: total })}
             onCorriger={(produitId) => ouvrirPave(produitId, "stock")}
+            livraison={livraison}
+            onLivraison={async (date) => {
+              const r = await fetch(`/api/session/${session.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ livraison_prevue: date }),
+              }).catch(() => null);
+              if (r?.ok) router.refresh();
+              else {
+                const e = await r?.json().catch(() => null);
+                setEchec(e?.erreur ?? "Date de livraison non enregistrée (réseau ?)");
+              }
+            }}
             onMarge={async (marge) => {
               const r = await fetch(`/api/session/${session.id}`, {
                 method: "PATCH",
@@ -1623,6 +1639,8 @@ function Recapitulatif({
   onValider,
   onRouvrir,
   livraisonsEnAttente,
+  livraison,
+  onLivraison,
 }: {
   session: Session;
   zones: Zone[];
@@ -1638,6 +1656,8 @@ function Recapitulatif({
   aVerifier: { l: LigneSaisie; total: number }[];
   onConfirmer: (produitId: number, total: number) => void;
   onCorriger: (produitId: number) => void;
+  livraison?: LivraisonPrevue;
+  onLivraison: (date: string | null) => void;
   onMarge: (marge: number) => void;
   onValider: () => void;
   onRouvrir: () => void;
@@ -1650,6 +1670,50 @@ function Recapitulatif({
           en haut du récapitulatif (demandé le 26/10/2026). */}
       {session.fournisseur_id === 1 ? (
         <ControleAdoria lignes={lignes} aCommander={aCommander} />
+      ) : null}
+
+      {livraison ? (
+        <div className="sans-impression mb-3 rounded-2xl border border-neutre-100 bg-white p-4 shadow-sm">
+          <label htmlFor="livraison" className="block font-titre text-sm font-semibold">
+            Livraison prévue
+          </label>
+          <p className="mt-1 text-xs leading-relaxed text-neutre-500">
+            Le stock compté doit tenir jusqu’à cette livraison. À changer quand
+            le relevé est avancé ou la livraison décalée (jour férié) : les
+            quantités proposées sont recalculées.
+          </p>
+          {fige ? (
+            <p className="mt-2 text-sm">{dateLongue(livraison.date)}</p>
+          ) : (
+            <input
+              id="livraison"
+              type="date"
+              key={livraison.date}
+              defaultValue={livraison.date}
+              min={session.date_commande.slice(0, 10)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return;
+                onLivraison(v === livraison.habituelle ? null : v);
+              }}
+              className="mt-3 min-h-12 w-full rounded-xl border border-neutre-200 bg-white px-3 text-base"
+            />
+          )}
+          <p className="mt-2 text-xs text-neutre-500">
+            {livraison.modifiee
+              ? `Date modifiée : ${joursTexte(livraison.date, session.date_commande)} après le relevé (d’habitude ${livraison.delaiHabituel} j, le ${dateLongue(livraison.habituelle)}).`
+              : `Délai habituel : ${livraison.delaiHabituel} j après le relevé.`}
+          </p>
+          {!fige && livraison.modifiee ? (
+            <button
+              type="button"
+              onClick={() => onLivraison(null)}
+              className="mt-2 text-xs font-semibold text-rouge-700 underline"
+            >
+              Revenir au délai habituel
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {!fige ? (
@@ -2033,4 +2097,19 @@ function StockImpossible({
       </div>
     </div>
   );
+}
+
+/** Livraison attendue pour la commande (voir `getCommande`). */
+type LivraisonPrevue = {
+  date: string;
+  habituelle: string;
+  delaiHabituel: number;
+  modifiee: boolean;
+};
+
+function joursTexte(livraison: string, releve: string) {
+  const j = Math.round(
+    (Date.parse(livraison.slice(0, 10)) - Date.parse(releve.slice(0, 10))) / 86_400_000,
+  );
+  return `${j} j`;
 }

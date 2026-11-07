@@ -66,6 +66,8 @@ export type Session = {
   note: string | null;
   created_at: string;
   validee_le: string | null;
+  /** Livraison attendue, si elle s'écarte du délai habituel (null sinon). */
+  livraison_prevue?: string | null;
 };
 
 export type Ligne = {
