@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  consoAnormalementBasse,
   prevoirAvecReleveDuJour,
   stockDisponible,
   suggerer,
@@ -181,6 +182,25 @@ const depassePlafond = (l: LigneSaisie, e: Etat, total: number | null) =>
   l.plafond !== null &&
   total !== null &&
   arrondi(total + (e.perte ?? 0)) > arrondi(l.plafond);
+
+/**
+ * Stock à vérifier avant de valider :
+ * - « impossible » : plus que ce qui pouvait rester (consommation négative) ;
+ * - « suspect » : consommation bien plus basse que d'habitude alors qu'une
+ *   livraison est arrivée (carton compté plein ?). Voir `consoAnormalementBasse`.
+ */
+type Motif = "impossible" | "suspect";
+
+const stockSuspect = (l: LigneSaisie, e: Etat, total: number | null) =>
+  l.comptePour === null
+    ? consoAnormalementBasse(l.serie, {
+        plafond: l.plafond,
+        stock: total,
+        perte: e.perte,
+        jours: l.joursDepuis,
+        stockPrecedent: l.stockPrecedent,
+      })
+    : null;
 
 export default function Saisie({
   session,
@@ -377,16 +397,17 @@ export default function Saisie({
   );
 
   /**
-   * Stock plus élevé que ce qui pouvait rester, pas encore confirmé : à
-   * corriger ou à confirmer avant de valider.
+   * Stock impossible ou invraisemblable, pas encore confirmé : à corriger ou
+   * à confirmer (« Le compte est juste ») avant de valider.
    */
   const stockAVerifier = useCallback(
-    (l: LigneSaisie, e: Etat) => {
+    (l: LigneSaisie, e: Etat): Motif | null => {
       const total = stockTotal(l, e);
-      return (
-        depassePlafond(l, e, total) &&
-        (e.verifie === null || arrondi(e.verifie) !== arrondi(total!))
-      );
+      if (total === null) return null;
+      if (e.verifie !== null && arrondi(e.verifie) === arrondi(total)) return null;
+      if (depassePlafond(l, e, total)) return "impossible";
+      if (stockSuspect(l, e, total)) return "suspect";
+      return null;
     },
     [stockTotal],
   );
@@ -777,6 +798,8 @@ export default function Saisie({
             aVerifier={aVerifier.map((l) => ({
               l,
               total: stockTotal(l, etatDe(l))!,
+              motif: stockAVerifier(l, etatDe(l))!,
+              suspect: stockSuspect(l, etatDe(l), stockTotal(l, etatDe(l))),
             }))}
             onConfirmer={(produitId, total) => modifier(produitId, { verifie: total })}
             onCorriger={(produitId) => ouvrirPave(produitId, "stock")}
@@ -942,9 +965,14 @@ export default function Saisie({
                       ? `besoin ${qte(besoin)} ${ligneCible.unite ?? "u"}`
                       : null;
                   })(),
-                  stockAVerifier(ligneCible, etatDe(ligneCible))
-                    ? `⚠ plus que possible (max ${qte(ligneCible.plafond!)})`
-                    : null,
+                  (() => {
+                    const motif = stockAVerifier(ligneCible, etatDe(ligneCible));
+                    if (motif === "impossible")
+                      return `⚠ plus que possible (max ${qte(ligneCible.plafond!)})`;
+                    if (motif === "suspect")
+                      return `⚠ presque rien de consommé : à recompter ?`;
+                    return null;
+                  })(),
                 ]
                   .filter(Boolean)
                   .join(" · ") || (ligneCible.conditionnement ?? undefined)
@@ -975,6 +1003,11 @@ export default function Saisie({
           avecRetour={propositionDe(ligneFiche, etatDe(ligneFiche), ligneFiche.duNous)}
           aVerifier={stockAVerifier(ligneFiche, etatDe(ligneFiche))}
           depasse={depassePlafond(
+            ligneFiche,
+            etatDe(ligneFiche),
+            stockTotal(ligneFiche, etatDe(ligneFiche)),
+          )}
+          suspect={stockSuspect(
             ligneFiche,
             etatDe(ligneFiche),
             stockTotal(ligneFiche, etatDe(ligneFiche)),
@@ -1021,8 +1054,8 @@ const LigneProduit = memo(function LigneProduit({
   stockTotal: number | null;
   /** Un autre Del Arte nous doit ce produit : commander ou attendre ? */
   question: boolean;
-  /** Stock plus élevé que ce qui pouvait rester, pas encore confirmé. */
-  aVerifier: boolean;
+  /** Stock impossible ou invraisemblable, pas encore confirmé. */
+  aVerifier: Motif | null;
   fige: boolean;
   zone?: string;
   enAttente: boolean;
@@ -1106,7 +1139,7 @@ const LigneProduit = memo(function LigneProduit({
           ) : null}
           {aVerifier ? (
             <span className="rounded-full bg-rouge-700 px-1.5 text-[11px] font-semibold text-white">
-              stock impossible
+              {aVerifier === "impossible" ? "stock impossible" : "à recompter"}
             </span>
           ) : null}
           {enAttente ? <span className="text-ambre-700">sur le téléphone</span> : null}
@@ -1260,6 +1293,7 @@ function Fiche({
   avecRetour,
   aVerifier,
   depasse,
+  suspect,
   zone,
   fige,
   enAttente,
@@ -1278,10 +1312,12 @@ function Fiche({
   /** Proposition sans compter sur un retour, et en comptant dessus. */
   selon: number;
   avecRetour: number;
-  /** Stock au-dessus de ce qui pouvait rester, pas encore confirmé. */
-  aVerifier: boolean;
+  /** Stock impossible ou invraisemblable, pas encore confirmé. */
+  aVerifier: Motif | null;
   /** Stock au-dessus de ce qui pouvait rester (confirmé ou non). */
   depasse: boolean;
+  /** Consommation anormalement basse (confirmée ou non). */
+  suspect: { conso: number; attendu: number } | null;
   zone?: string;
   fige: boolean;
   enAttente: boolean;
@@ -1360,11 +1396,13 @@ function Fiche({
             </p>
           ) : null}
 
-          {depasse && stockTotal !== null && ligne.plafond !== null ? (
+          {(depasse || suspect) && stockTotal !== null && ligne.plafond !== null ? (
             <StockImpossible
               ligne={ligne}
               total={stockTotal}
-              ouvert={aVerifier}
+              motif={depasse ? "impossible" : "suspect"}
+              suspect={suspect}
+              ouvert={aVerifier !== null}
               fige={fige}
               onCorriger={onStock}
               onConfirmer={() => onModifier(ligne.produitId, { verifie: stockTotal })}
@@ -1653,7 +1691,12 @@ function Recapitulatif({
   questions: { l: LigneSaisie; selon: number; avecRetour: number }[];
   onRetour: (produitId: number, retour: number) => void;
   /** Stocks plus élevés que ce qui pouvait rester : à corriger ou confirmer. */
-  aVerifier: { l: LigneSaisie; total: number }[];
+  aVerifier: {
+    l: LigneSaisie;
+    total: number;
+    motif: Motif;
+    suspect: { conso: number; attendu: number } | null;
+  }[];
   onConfirmer: (produitId: number, total: number) => void;
   onCorriger: (produitId: number) => void;
   livraison?: LivraisonPrevue;
@@ -1743,19 +1786,23 @@ function Recapitulatif({
       {!fige && aVerifier.length ? (
         <section className="sans-impression mb-3 rounded-2xl border border-rouge-100 bg-rouge-50 p-4">
           <h2 className="font-titre text-sm font-semibold text-rouge-700">
-            Stock impossible : à vérifier avant de valider
+            Stocks à vérifier avant de valider
           </h2>
           <p className="mt-1 text-xs leading-relaxed text-rouge-700">
-            Vous avez compté plus qu’il ne pouvait en rester (dernier relevé, plus
-            les livraisons et dépannages enregistrés depuis). La consommation
-            serait négative.
+            « Stock impossible » : vous avez compté plus qu’il ne pouvait en
+            rester (dernier relevé, plus les livraisons et dépannages enregistrés
+            depuis). « À recompter » : presque rien n’aurait été consommé depuis
+            la dernière livraison, bien moins que d’habitude (carton compté plein
+            alors qu’il est entamé ?).
           </p>
           <ul className="mt-3 space-y-3">
-            {aVerifier.map(({ l, total }) => (
+            {aVerifier.map(({ l, total, motif, suspect }) => (
               <li key={l.produitId} className="rounded-xl bg-white p-3">
                 <StockImpossible
                   ligne={l}
                   total={total}
+                  motif={motif}
+                  suspect={suspect}
                   ouvert
                   fige={fige}
                   avecNom
@@ -2031,6 +2078,8 @@ const depuis = (precedent: number, max: number, u: string) => {
 function StockImpossible({
   ligne,
   total,
+  motif = "impossible",
+  suspect = null,
   ouvert,
   fige,
   avecNom = false,
@@ -2039,6 +2088,9 @@ function StockImpossible({
 }: {
   ligne: LigneSaisie;
   total: number;
+  motif?: Motif;
+  /** Consommation comptée et attendue, pour « à recompter ». */
+  suspect?: { conso: number; attendu: number } | null;
   /** Pas encore confirmé : on pose la question. */
   ouvert: boolean;
   fige: boolean;
@@ -2048,7 +2100,21 @@ function StockImpossible({
 }) {
   const u = ligne.unite ?? "u";
   const max = ligne.plafond ?? 0;
-  const explication = (
+  const explication =
+    motif === "suspect" && suspect ? (
+      <p className={avecNom ? "text-xs text-neutre-500" : "text-sm text-rouge-700"}>
+        Compté <span className="font-semibold">{qte(total)} {u}</span> : il n’en
+        serait parti que{" "}
+        <span className="font-semibold">
+          {qte(suspect.conso)} {u}
+        </span>{" "}
+        depuis le dernier relevé, alors qu’il en part d’habitude environ{" "}
+        <span className="font-semibold">
+          {qte(suspect.attendu)} {u}
+        </span>{" "}
+        sur la même durée. Un carton compté plein est-il entamé ?
+      </p>
+    ) : (
     <p className={avecNom ? "text-xs text-neutre-500" : "text-sm text-rouge-700"}>
       Compté <span className="font-semibold">{qte(total)} {u}</span>, mais il ne
       pouvait pas en rester plus de{" "}
@@ -2059,6 +2125,17 @@ function StockImpossible({
       .
     </p>
   );
+  if (!ouvert && motif === "suspect") {
+    return (
+      <div className="rounded-2xl border border-ambre-100 bg-ambre-50 p-4 text-sm text-ambre-700">
+        <p className="font-semibold">Stock confirmé malgré une consommation très basse</p>
+        <p className="mt-1">
+          Si une livraison enregistrée n’est pas arrivée en entier, corrigez sa
+          réception : sinon la consommation de la semaine sera fausse.
+        </p>
+      </div>
+    );
+  }
   if (!ouvert) {
     return (
       <div className="rounded-2xl border border-ambre-100 bg-ambre-50 p-4 text-sm text-ambre-700">
@@ -2076,7 +2153,9 @@ function StockImpossible({
       {avecNom ? (
         <p className="text-sm font-semibold">{ligne.nom}</p>
       ) : (
-        <p className="font-titre text-base font-semibold text-rouge-700">Stock impossible</p>
+        <p className="font-titre text-base font-semibold text-rouge-700">
+          {motif === "suspect" ? "Stock à recompter" : "Stock impossible"}
+        </p>
       )}
       {explication}
       <div className="mt-2 grid grid-cols-2 gap-2">

@@ -320,3 +320,53 @@ export function couverture(p: Prevision, stock: number | null): number | null {
   if (stock === null || p.consoPrevue <= 0) return null;
   return Math.round((stock / p.consoPrevue) * 10) / 10;
 }
+
+/**
+ * Consommation anormalement basse depuis le dernier relevé (demandé par
+ * Nicolas le 08/11/2026, après la rupture de sauce bolognaise).
+ *
+ * Au relevé Logistimax du 02/11/2026, les 6 cartons livrés le jeudi ont été
+ * comptés pleins (37 sachets) : 4 sachets consommés dans la semaine au lieu
+ * d'une vingtaine, rien proposé, rupture le dimanche 08/11. Même chose pour
+ * la mousse mascarpone vanille (3 cartons comptés, soit toute la livraison).
+ * Le stock n'était pas « impossible », seulement invraisemblable.
+ *
+ * On demande donc de recompter quand, à la fois :
+ * - quelque chose est entré depuis le dernier relevé (livraison, dépannage) :
+ *   c'est le cas d'un carton compté plein alors qu'il est entamé ;
+ * - le produit est régulier : consommé sur au moins 6 des 8 dernières périodes ;
+ * - la consommation attendue sur la période (rythme médian × jours) atteint
+ *   au moins 4 unités ;
+ * - la consommation comptée est inférieure au tiers de l'attendue.
+ * Une consommation négative relève de « stock impossible », pas d'ici.
+ *
+ * Rejoué sur les relevés depuis le 01/09/2026 : 0 à 5 produits par relevé
+ * (surtout Logistimax), dont la bolognaise et la mousse le 02/11.
+ */
+export function consoAnormalementBasse(
+  serie: PointConso[],
+  enCours: {
+    plafond: number | null;
+    stock: number | null;
+    perte: number | null;
+    jours: number | null;
+    stockPrecedent: number | null;
+  },
+): { conso: number; attendu: number } | null {
+  const { plafond, stock, perte, jours, stockPrecedent } = enCours;
+  if (plafond === null || stock === null || stockPrecedent === null || !jours || jours <= 0)
+    return null;
+  // Rien n'est entré depuis le dernier relevé.
+  if (plafond <= stockPrecedent + 0.0005) return null;
+  const conso = Math.round((plafond - stock - (perte ?? 0)) * 1000) / 1000;
+  if (conso < 0) return null;
+  const recents = serie.slice(-8).filter((s) => s.jours > 0);
+  if (recents.filter((s) => s.conso > 0).length < 6) return null;
+  const parJour = recents.map((s) => s.conso / s.jours).sort((a, b) => a - b);
+  const milieu = Math.floor(parJour.length / 2);
+  const mediane =
+    parJour.length % 2 ? parJour[milieu] : (parJour[milieu - 1] + parJour[milieu]) / 2;
+  const attendu = Math.round(mediane * jours * 10) / 10;
+  if (attendu < 4 || conso >= attendu / 3) return null;
+  return { conso, attendu };
+}
