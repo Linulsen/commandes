@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { appareilCourant } from "@/lib/appareil";
 import { changerStatut, codeAdminExiste, ficheAppareil, verifierCodeAdmin } from "@/lib/admin";
+import { cheminInterne } from "@/lib/chemin";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,8 @@ export default async function PageAttente({
   searchParams: Promise<{ suite?: string; erreur?: string }>;
 }) {
   const { suite, erreur } = await searchParams;
-  const destination = suite && suite.startsWith("/") && !suite.startsWith("/appareil") ? suite : "/";
+  const interne = cheminInterne(suite);
+  const destination = interne.startsWith("/appareil") ? "/" : interne;
   const moi = await appareilCourant();
   if (!moi) redirect(`/appareil?suite=${encodeURIComponent(destination)}`);
   const fiche = await ficheAppareil(moi.id);
@@ -26,7 +28,7 @@ export default async function PageAttente({
   async function autoriser(formData: FormData) {
     "use server";
     const code = String(formData.get("code") ?? "");
-    const retour = String(formData.get("suite") ?? "/");
+    const retour = cheminInterne(formData.get("suite"));
     const resultat = await verifierCodeAdmin(code);
     if (resultat !== "ok") {
       redirect(`/appareil/attente?erreur=${resultat}&suite=${encodeURIComponent(retour)}`);

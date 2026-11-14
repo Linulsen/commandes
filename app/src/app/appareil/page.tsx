@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { appareilCourant, nettoyer, nomAppareil, presenterAppareil } from "@/lib/appareil";
 import { ChampsAppareil } from "./ChampsAppareil";
+import { cheminInterne } from "@/lib/chemin";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function PageAppareil({
 
   async function enregistrer(formData: FormData) {
     "use server";
-    const destination = String(formData.get("suite") ?? "/") || "/";
+    const destination = cheminInterne(formData.get("suite"));
     const prenom = nettoyer(formData.get("prenom"));
     const nomSaisi = nettoyer(formData.get("nom"));
     if (!prenom || !nomSaisi) {
@@ -28,7 +29,7 @@ export default async function PageAppareil({
     }
     const deja = await appareilCourant();
     await presenterAppareil(nomSaisi, prenom, deja ? "appareil_modifie" : "appareil_enregistre");
-    redirect(destination.startsWith("/") ? destination : "/");
+    redirect(destination);
   }
 
   return (

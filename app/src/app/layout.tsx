@@ -27,6 +27,7 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "Commandes", statusBarStyle: "default" },
   // iOS ignore le SVG sur l'écran d'accueil et prendrait une capture de la page.
   icons: { icon: "/icone.svg", apple: "/apple-touch-icon.png" },
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {

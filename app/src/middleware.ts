@@ -39,12 +39,17 @@ export async function middleware(req: NextRequest) {
   }
   if (await jetonValide(req.cookies.get(COOKIE_NOM)?.value)) {
     const appareil = req.cookies.get(COOKIE_APPAREIL)?.value;
-    // Un appareil connecté avant l'inventaire n'a jamais donné son nom ni le
-    // prénom de son utilisateur : on le lui demande une fois, à l'ouverture
-    // d'une page. Les envois en attente (routes d'API) passent toujours, pour
-    // ne perdre aucune saisie faite hors ligne.
+    // Appareil qui ne s'est pas présenté (ou cookie effacé) : on lui demande
+    // de se présenter à l'ouverture d'une page. Les routes d'API lui sont
+    // fermées — sinon le seul code d'équipe suffisait à lire et écrire sans
+    // passer par l'autorisation des appareils (audit du 14/11/2026). Les
+    // saisies hors ligne ne sont pas perdues : la file d'attente les garde
+    // et les renvoie une fois l'appareil présenté et autorisé.
     if (!appareil || !UUID.test(appareil)) {
-      if (pathname.startsWith("/api/") || pathname === "/appareil") return NextResponse.next();
+      if (pathname === "/appareil") return NextResponse.next();
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ erreur: "Appareil non présenté" }, { status: 403 });
+      }
       return rediriger(req, "/appareil");
     }
 
@@ -105,5 +110,5 @@ function rediriger(req: NextRequest, vers: string) {
 export const config = {
   // Le service worker, le manifeste et les icônes doivent se charger avant
   // toute connexion : le navigateur les demande sans cookie.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icone.svg|icone-192.png|icone-512.png|icone-masquable-512.png|apple-touch-icon.png).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|robots.txt|sw.js|icone.svg|icone-192.png|icone-512.png|icone-masquable-512.png|apple-touch-icon.png).*)"],
 };

@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { COOKIE_DUREE, COOKIE_NOM, creerJeton } from "@/lib/auth";
 import { appareilCourant, nettoyer, nomAppareil, presenterAppareil } from "@/lib/appareil";
 import { ChampsAppareil } from "../appareil/ChampsAppareil";
+import { cheminInterne } from "@/lib/chemin";
+import { adresseClient, codeAccesCorrect, FENETRE_MINUTES, noterEssaiFaux, tropDEssais } from "@/lib/essais-connexion";
 
 export default async function Connexion({
   searchParams,
@@ -16,10 +18,15 @@ export default async function Connexion({
   async function entrer(formData: FormData) {
     "use server";
     const code = String(formData.get("code") ?? "");
-    const destination = String(formData.get("suite") ?? "/") || "/";
+    const destination = cheminInterne(formData.get("suite"));
     const prenom = nettoyer(formData.get("prenom"));
     const nomSaisi = nettoyer(formData.get("nom"));
-    if (code !== process.env.ACCESS_CODE) {
+    const ip = await adresseClient();
+    if (await tropDEssais(ip)) {
+      redirect(`/connexion?erreur=bloque&suite=${encodeURIComponent(destination)}`);
+    }
+    if (!codeAccesCorrect(code)) {
+      await noterEssaiFaux(ip, prenom, nomSaisi);
       redirect(`/connexion?erreur=code&suite=${encodeURIComponent(destination)}`);
     }
     if (!prenom || !nomSaisi) {
@@ -54,7 +61,7 @@ export default async function Connexion({
         </p>
 
         <form action={entrer} className="mt-8">
-          <input type="hidden" name="suite" value={suite ?? "/"} />
+          <input type="hidden" name="suite" value={cheminInterne(suite)} />
           <label htmlFor="code" className="block text-sm font-semibold">
             Mot de passe
           </label>
@@ -68,6 +75,11 @@ export default async function Connexion({
           />
           {erreur === "code" ? (
             <p className="mt-2 text-sm font-semibold text-rouge-50">Mot de passe incorrect.</p>
+          ) : null}
+          {erreur === "bloque" ? (
+            <p className="mt-2 text-sm font-semibold text-rouge-50">
+              Trop d’essais incorrects. Réessayez dans {FENETRE_MINUTES} minutes.
+            </p>
           ) : null}
 
           <ChampsAppareil prenom={appareil?.prenom ?? ""} nom={nom ?? ""} />
