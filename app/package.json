@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts",
+    "build": "npm run test && next build",
     "start": "next start",
     "lint": "next lint"
   },

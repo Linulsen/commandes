@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sb } from "@/lib/db";
 import { getCommande, quantiteRetenue } from "@/lib/model";
+import { VERSION_CALCUL } from "@/lib/forecast";
 
 /** Fige la commande. Les relevés servent ensuite de base à la prévision. */
 export async function POST(
@@ -42,7 +43,11 @@ export async function POST(
   }
   const { error } = await sb()
     .from("cmd_sessions")
-    .update({ statut: "validee", validee_le: new Date().toISOString() })
+    .update({
+      statut: "validee",
+      validee_le: new Date().toISOString(),
+      version_calcul: VERSION_CALCUL,
+    })
     .eq("id", id)
     .eq("statut", "brouillon");
   if (error) {

@@ -68,6 +68,8 @@ export type Session = {
   validee_le: string | null;
   /** Livraison attendue, si elle s'écarte du délai habituel (null sinon). */
   livraison_prevue?: string | null;
+  /** Version des règles de calcul à la validation (VERSION_CALCUL). */
+  version_calcul?: string | null;
 };
 
 export type Ligne = {

@@ -47,6 +47,8 @@ permet de rouvrir l'application hors ligne.
 | `app/src/lib/file-attente.ts` | saisies gardées hors ligne et renvoyées |
 | `app/src/app/api/session/[id]/pdf` | bon de commande PDF |
 | `app/supabase/migrations` | schéma de la base |
+| `app/tests` | tests du calcul, lancés à chaque déploiement |
+| `app/scripts/backtest_livraison.sql` | rejeu de l'historique dans le SQL Editor de Supabase |
 | `app/scripts/import_excel.py` | reprise du classeur |
 
 ## Reprendre un classeur
@@ -68,3 +70,20 @@ npm install
 cp .env.example .env.local   # puis remplir les quatre variables
 npm run dev
 ```
+
+## Tests et mise en ligne
+
+`npm run build` lance d'abord les tests du calcul (`npm run test`, sans
+dépendance : Node exécute le TypeScript directement). Un test qui échoue fait
+échouer le déploiement Vercel : la version en service reste en ligne.
+
+Tout changement qui touche le calcul des propositions suit ce chemin :
+
+1. mettre à jour ou ajouter le test du cas concerné (`app/tests`) et
+   `VERSION_CALCUL` dans `forecast.ts` ;
+2. publier sur une branche (pas sur `master`) : Vercel construit une version
+   d'essai, les tests passent ou non ;
+3. une fois la version d'essai réussie, publier sur `master` (mise en service).
+
+La version du calcul est enregistrée sur chaque commande validée
+(`cmd_sessions.version_calcul`).

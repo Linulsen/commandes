@@ -140,6 +140,15 @@ export function prevoir(
   };
 }
 
+/**
+ * Version des règles de calcul, enregistrée sur chaque commande validée
+ * (cmd_sessions.version_calcul) pour savoir avec quel calcul elle a été
+ * proposée. À changer, avec les tests (app/tests), à chaque modification qui
+ * change les quantités proposées :
+ * - 2026-11-02 : calcul à partir du jour de livraison, +20 % pour les réguliers.
+ */
+export const VERSION_CALCUL = "2026-11-02";
+
 /** Marge des produits réguliers (fiabilité « bonne »), depuis le 02/11/2026. */
 export const MARGE_REGULIERS = 0.2;
 
