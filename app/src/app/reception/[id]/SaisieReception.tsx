@@ -14,6 +14,7 @@ import {
 import type { ProduitCatalogue } from "@/lib/model";
 import type { Reception } from "@/lib/types";
 import { echangeDe } from "@/lib/del-arte";
+import { MOTIFS_PERTE, ecrireMotif, lireMotif, type MotifPerte } from "@/lib/pertes";
 import { useEcranAllume } from "@/lib/ecran";
 import EtatEnvoi from "../../EtatEnvoi";
 import PhotoBL from "./PhotoBL";
@@ -86,6 +87,8 @@ export default function SaisieReception({
   const [recherche, setRecherche] = useState("");
   const [date, setDate] = useState(reception.date_reception);
   const [provenance, setProvenance] = useState(reception.provenance ?? "");
+  /** Précision d'une perte « Autre », gardée à part pendant la frappe. */
+  const [precision, setPrecision] = useState(() => lireMotif(reception.provenance).precision);
   const [echec, setEchec] = useState<string | null>(null);
   const [confirmer, setConfirmer] = useState(false);
   /** Lignes du bon photographié en doute, pas encore tranchées. */
@@ -252,6 +255,11 @@ export default function SaisieReception({
 
   const valider = async () => {
     setEchec(null);
+    // Le motif d'une perte sert au bilan hebdomadaire (DLC dépassée = trop commandé).
+    if (perte && !lireMotif(provenance).motif) {
+      setEchec("Choisissez le motif de la perte avant de valider.");
+      return;
+    }
     if (!(await vider())) {
       setEchec("Des saisies n’ont pas pu partir. Retentez avec du réseau.");
       return;
@@ -303,15 +311,39 @@ export default function SaisieReception({
                 className="mt-1 min-h-12 w-full rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700 disabled:bg-neutre-50"
               />
             </label>
-            {depannage && !echange ? (
+            {perte ? (
               <label className="min-w-0 flex-1">
                 <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutre-500">
-                  {perte ? "Motif" : "Où"}
+                  Motif
+                </span>
+                <select
+                  value={lireMotif(provenance).motif ?? ""}
+                  disabled={fige}
+                  onChange={(e) => {
+                    const m = (e.target.value || null) as MotifPerte | null;
+                    const texte = ecrireMotif(m, m === "Autre" ? precision : "");
+                    setProvenance(texte);
+                    void majEntete({ provenance: texte });
+                  }}
+                  className="mt-1 min-h-12 w-full rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700 disabled:bg-neutre-50"
+                >
+                  <option value="">À choisir…</option>
+                  {MOTIFS_PERTE.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : depannage && !echange ? (
+              <label className="min-w-0 flex-1">
+                <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutre-500">
+                  Où
                 </span>
                 <input
                   value={provenance}
                   disabled={fige}
-                  placeholder={perte ? "DLC dépassée…" : "Metro…"}
+                  placeholder="Metro…"
                   onChange={(e) => setProvenance(e.target.value)}
                   onBlur={() => void majEntete({ provenance })}
                   className="mt-1 min-h-12 w-full rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700 disabled:bg-neutre-50"
@@ -319,6 +351,25 @@ export default function SaisieReception({
               </label>
             ) : null}
           </div>
+          {perte && lireMotif(provenance).motif === "Autre" ? (
+            <label className="mt-2 block">
+              <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutre-500">
+                Précisez
+              </span>
+              <input
+                value={precision}
+                disabled={fige}
+                placeholder="Rappel fournisseur, chambre en panne…"
+                onChange={(e) => setPrecision(e.target.value)}
+                onBlur={() => {
+                  const texte = ecrireMotif("Autre", precision);
+                  setProvenance(texte);
+                  void majEntete({ provenance: texte });
+                }}
+                className="mt-1 min-h-12 w-full rounded-xl border-2 border-neutre-200 bg-white px-3 text-base outline-none focus:border-rouge-700 disabled:bg-neutre-50"
+              />
+            </label>
+          ) : null}
           {depannage ? (
             <p className="mt-2 text-xs leading-relaxed text-neutre-500">
               {perte

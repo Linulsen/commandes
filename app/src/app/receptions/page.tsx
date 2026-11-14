@@ -2,6 +2,7 @@ import Link from "next/link";
 import Entete from "../Entete";
 import { getReceptionsAccueil, type EchangeEnCours } from "@/lib/model";
 import { RESTAURANTS_DEL_ARTE } from "@/lib/del-arte";
+import { MOTIFS_PERTE } from "@/lib/pertes";
 import { dateMoyenne, libelleHorsCommande, qte } from "@/lib/format";
 import type { Reception } from "@/lib/types";
 import BarreNav from "../BarreNav";
@@ -183,19 +184,26 @@ export default async function Receptions() {
               évite que la prévision le compte comme vendu, et qu’elle en fasse
               commander davantage la fois suivante.
             </p>
-            <form action="/api/receptions" method="post" className="mt-3 flex gap-2">
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-neutre-500">
+              Déclarer une perte — motif
+            </p>
+            <form action="/api/receptions" method="post" className="mt-1.5 grid grid-cols-2 gap-2">
               <input type="hidden" name="type" value="perte" />
-              <input
-                name="provenance"
-                placeholder="Motif ? (DLC…)"
-                className="min-h-12 min-w-0 flex-1 rounded-xl border-2 border-neutre-200 px-3 text-base outline-none focus:border-rouge-700"
-              />
-              <button
-                type="submit"
-                className="min-h-12 shrink-0 rounded-xl bg-rouge-700 px-4 font-titre text-sm font-semibold text-white"
-              >
-                Déclarer
-              </button>
+              {MOTIFS_PERTE.map((m, i) => (
+                <button
+                  key={m}
+                  type="submit"
+                  name="provenance"
+                  value={m}
+                  className={
+                    i === 0
+                      ? "col-span-2 min-h-12 rounded-xl bg-rouge-700 px-3 font-titre text-sm font-semibold text-white"
+                      : "min-h-12 rounded-xl border border-neutre-200 px-3 font-titre text-sm font-semibold text-neutre-700"
+                  }
+                >
+                  {m}
+                </button>
+              ))}
             </form>
           </div>
           <EnCours liste={pertesEnCours} />
