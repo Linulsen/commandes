@@ -150,7 +150,7 @@ export function prevoir(
 export const VERSION_CALCUL = "2026-11-02";
 
 /** Marge des produits réguliers (fiabilité « bonne »), depuis le 02/11/2026. */
-export const MARGE_REGULIERS = 0.2;
+export const MARGE_REGULIERS = 0.5;
 
 /**
  * Quantité à commander, en colis.
